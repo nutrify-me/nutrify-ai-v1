@@ -9,6 +9,7 @@ import '../models/fitness.dart';
 import '../services/api_service.dart';
 import '../services/workout_cache_service.dart';
 import '../services/sync_service.dart';
+import 'auth_provider.dart';
 
 final _logger = Logger();
 final _uuid = Uuid();
@@ -182,15 +183,15 @@ class WorkoutSessionNotifier extends StateNotifier<WorkoutSessionState> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final sessionData = prefs.getString('saved_workout_session');
-      
+
       if (sessionData != null) {
         final Map<String, dynamic> data = json.decode(sessionData);
         final savedTimestamp = data['savedAt'] as int?;
-        
+
         if (savedTimestamp != null) {
           final age = DateTime.now().millisecondsSinceEpoch - savedTimestamp;
           const twentyFourHours = 24 * 60 * 60 * 1000;
-          
+
           // Only restore if less than 24 hours old
           if (age < twentyFourHours) {
             await restoreSession(data);
@@ -214,7 +215,7 @@ class WorkoutSessionNotifier extends StateNotifier<WorkoutSessionState> {
   /// Save current session to local storage
   Future<void> _saveSession() async {
     if (state.activeSession == null) return;
-    
+
     try {
       final prefs = await SharedPreferences.getInstance();
       final sessionData = {
@@ -237,7 +238,7 @@ class WorkoutSessionNotifier extends StateNotifier<WorkoutSessionState> {
           }).toList(),
         }).toList(),
       };
-      
+
       await prefs.setString('saved_workout_session', json.encode(sessionData));
     } catch (e) {
       _logger.w('Failed to save session: $e');
@@ -251,7 +252,7 @@ class WorkoutSessionNotifier extends StateNotifier<WorkoutSessionState> {
       final workoutName = data['workoutName'] as String;
       final elapsedSeconds = data['elapsedSeconds'] as int? ?? 0;
       final exercisesData = data['exercises'] as List? ?? [];
-      
+
       // Recreate session object
       final session = WorkoutSession(
         id: sessionId,
@@ -263,7 +264,7 @@ class WorkoutSessionNotifier extends StateNotifier<WorkoutSessionState> {
         durationSeconds: elapsedSeconds,
         sets: [],
       );
-      
+
       // Recreate exercises
       final exercises = exercisesData.map((e) {
         final completedSetsData = e['completedSets'] as List? ?? [];
@@ -274,7 +275,7 @@ class WorkoutSessionNotifier extends StateNotifier<WorkoutSessionState> {
           isWarmup: s['isWarmup'] as bool? ?? false,
           isPR: false,
         )).toList();
-        
+
         return ActiveExerciseProgress(
           exerciseId: e['exerciseId'] as String,
           name: e['name'] as String,
@@ -288,13 +289,13 @@ class WorkoutSessionNotifier extends StateNotifier<WorkoutSessionState> {
           completedSets: completedSets,
         );
       }).toList();
-      
+
       state = state.copyWith(
         activeSession: session,
         exercises: exercises,
         elapsedSeconds: elapsedSeconds,
       );
-      
+
       _startElapsedTimer();
     } catch (e) {
       _logger.e('Failed to restore session from data: $e');
@@ -605,7 +606,7 @@ class WorkoutSessionNotifier extends StateNotifier<WorkoutSessionState> {
     state = state.copyWith(
       exercises: [...state.exercises, exercise],
     );
-    
+
     // Save session after adding exercise
     _saveSession();
   }

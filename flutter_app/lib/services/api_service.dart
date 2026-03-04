@@ -1206,8 +1206,3 @@ class GenerationEvent {
   bool get isFailed => status == 'failed';
   bool get isInProgress => status == 'in_progress';
 }
-
-// Provider for API service
-final apiServiceProvider = Provider<ApiService>((ref) {
-  return ApiService();
-});

@@ -5,6 +5,7 @@ import 'dart:convert';
 import '../models/fitness.dart';
 import '../services/api_service.dart';
 import '../services/local_database.dart';
+import 'auth_provider.dart';
 
 final _logger = Logger();
 
@@ -68,6 +69,14 @@ class FitnessNotifier extends StateNotifier<FitnessState> {
 
   void setUserId(String userId) {
     _currentUserId = userId;
+  }
+
+  /// Reset state when a new user logs in
+  void resetForNewUser(String newUserId) {
+    _currentUserId = newUserId;
+    _hasLoadedOnce = false;
+    state = const FitnessState();
+    _logger.d('FitnessNotifier reset for new user: $newUserId');
   }
 
   Future<void> loadCurrentPlan({bool forceRefresh = false}) async {
@@ -206,13 +215,13 @@ class FitnessNotifier extends StateNotifier<FitnessState> {
         completionPercentage: completionPercentage,
         notes: notes,
       );
-      
+
       // Invalidate weekly stats cache since we logged a new workout
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('weekly_stats_cache');
       await prefs.remove('weekly_stats_cache_time');
       _logger.d('Invalidated weekly stats cache after logging workout');
-      
+
       return true;
     } catch (e) {
       state = state.copyWith(error: e.toString());
@@ -236,11 +245,11 @@ class FitnessNotifier extends StateNotifier<FitnessState> {
         final prefs = await SharedPreferences.getInstance();
         final cachedData = prefs.getString('weekly_stats_cache');
         final cacheTimestamp = prefs.getInt('weekly_stats_cache_time');
-        
+
         if (cachedData != null && cacheTimestamp != null) {
           final cacheAge = DateTime.now().millisecondsSinceEpoch - cacheTimestamp;
           const fiveMinutes = 5 * 60 * 1000; // 5 minutes in milliseconds
-          
+
           // Use cache if less than 5 minutes old
           if (cacheAge < fiveMinutes) {
             final Map<String, dynamic> cached = json.decode(cachedData);
@@ -313,9 +322,4 @@ class FitnessNotifier extends StateNotifier<FitnessState> {
 final fitnessNotifierProvider = StateNotifierProvider<FitnessNotifier, FitnessState>((ref) {
   final apiService = ref.watch(apiServiceProvider);
   return FitnessNotifier(apiService);
-});
-
-// API Service Provider (reused from auth_provider)
-final apiServiceProvider = Provider<ApiService>((ref) {
-  return ApiService();
 });

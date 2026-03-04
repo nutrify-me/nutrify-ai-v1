@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logger/logger.dart';
 import '../models/gamification.dart';
 import '../services/api_service.dart';
+import 'auth_provider.dart';
 
 final _logger = Logger();
 

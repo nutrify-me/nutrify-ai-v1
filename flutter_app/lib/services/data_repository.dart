@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logger/logger.dart';
 import 'cache_service.dart';
 import 'api_service.dart';
+import '../providers/auth_provider.dart';
 import '../models/nutrition.dart';
 import '../models/fitness.dart';
 import '../models/user.dart';

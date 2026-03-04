@@ -6,6 +6,8 @@ import '../services/data_repository.dart';
 import '../services/offline_mutation_queue.dart';
 import '../services/cache_service.dart';
 import '../services/local_database.dart';
+import 'nutrition_provider.dart';
+import 'fitness_provider.dart';
 
 // Auth status enum for cleaner state management
 enum AuthStatus {
@@ -57,12 +59,15 @@ class AuthState {
   bool get hasCompletedOnboarding => profile?.onboardingCompleted == true;
 }
 
-// Auth notifier
-class AuthNotifier extends StateNotifier<AuthState> {
-  final ApiService _apiService;
+// Auth notifier - converted to Notifier to access ref for other providers
+class AuthNotifier extends Notifier<AuthState> {
+  late final ApiService _apiService;
 
-  AuthNotifier(this._apiService) : super(const AuthState(status: AuthStatus.unknown)) {
+  @override
+  AuthState build() {
+    _apiService = ref.watch(apiServiceProvider);
     _initializeAuth();
+    return const AuthState(status: AuthStatus.unknown);
   }
 
   Future<void> _initializeAuth() async {
@@ -72,6 +77,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
       // No stored token, user needs to log in
       state = state.copyWith(status: AuthStatus.unauthenticated);
     }
+  }
+
+  /// Reset dependent providers when a new user logs in
+  void _resetDependentProviders(String userId) {
+    // Reset nutrition provider
+    final nutritionNotifier = ref.read(nutritionNotifierProvider.notifier);
+    nutritionNotifier.resetForNewUser(userId);
+
+    // Reset fitness provider
+    final fitnessNotifier = ref.read(fitnessNotifierProvider.notifier);
+    fitnessNotifier.resetForNewUser(userId);
   }
 
   Future<void> _loadUserData() async {
@@ -91,8 +107,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
           status: hasOnboarded ? AuthStatus.authenticated : AuthStatus.needsOnboarding,
         );
 
-        // Warm all caches + process offline queue in background
+        // Reset dependent providers and warm caches
         if (hasOnboarded) {
+          _resetDependentProviders(user.id);
           _warmCachesInBackground();
         }
       } catch (e) {
@@ -198,11 +215,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<LogoutResult> logout() async {
     // Check for pending workouts before logging out
-    final hasPending = await syncService.hasPendingWorkouts();
+    final hasPending = await SyncService().hasPendingWorkouts();
 
     if (hasPending) {
       // Try to sync pending workouts first
-      final syncSuccess = await syncService.syncBeforeLogout();
+      final syncSuccess = await SyncService().syncBeforeLogout();
 
       if (!syncSuccess) {
         // Sync failed - data may be lost
@@ -249,6 +266,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
         isLoading: false,
         status: hasOnboarded ? AuthStatus.authenticated : AuthStatus.needsOnboarding,
       );
+
+      // Reset dependent providers and warm caches on onboarding complete
+      if (hasOnboarded) {
+        final userId = state.user?.id ?? '';
+        if (userId.isNotEmpty) {
+          _resetDependentProviders(userId);
+          _warmCachesInBackground();
+        }
+      }
     } catch (e) {
       // Profile might not exist yet - needs onboarding
       state = state.copyWith(
@@ -294,9 +320,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
 // Provider definitions
 final apiServiceProvider = Provider<ApiService>((ref) => ApiService());
 
-// Provider
-final authNotifierProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
-  final apiService = ref.watch(apiServiceProvider);
-  return AuthNotifier(apiService);
-});
+// Auth provider using NotifierProvider
+final authNotifierProvider = NotifierProvider<AuthNotifier, AuthState>(
+  () => AuthNotifier(),
+);
 

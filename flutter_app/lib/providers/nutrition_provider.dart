@@ -3,6 +3,7 @@ import 'package:logger/logger.dart';
 import '../models/nutrition.dart';
 import '../services/api_service.dart';
 import '../services/local_database.dart';
+import 'auth_provider.dart';
 
 final _logger = Logger();
 
@@ -45,6 +46,14 @@ class NutritionNotifier extends StateNotifier<NutritionState> {
 
   void setUserId(String userId) {
     _currentUserId = userId;
+  }
+
+  /// Reset state when a new user logs in
+  void resetForNewUser(String newUserId) {
+    _currentUserId = newUserId;
+    _hasLoadedOnce = false;
+    state = const NutritionState();
+    _logger.d('NutritionNotifier reset for new user: $newUserId');
   }
 
   Future<void> loadCurrentPlan({bool forceRefresh = false}) async {
@@ -211,9 +220,4 @@ class NutritionNotifier extends StateNotifier<NutritionState> {
 final nutritionNotifierProvider = StateNotifierProvider<NutritionNotifier, NutritionState>((ref) {
   final apiService = ref.watch(apiServiceProvider);
   return NutritionNotifier(apiService);
-});
-
-// API Service Provider (reused from auth_provider)
-final apiServiceProvider = Provider<ApiService>((ref) {
-  return ApiService();
 });

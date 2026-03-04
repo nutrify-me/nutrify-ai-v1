@@ -4,6 +4,7 @@ import 'package:logger/logger.dart';
 import '../models/progress.dart';
 import '../services/api_service.dart';
 import '../services/cache_service.dart';
+import 'auth_provider.dart';
 
 final _logger = Logger();
 

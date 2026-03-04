@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/ai.dart';
 import '../services/api_service.dart';
+import 'auth_provider.dart';
 
 // AI Chat State
 class AiChatState {
@@ -76,7 +77,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
 
   Future<void> loadChatHistory() async {
     state = state.copyWith(isLoading: true, error: null);
-    
+
     try {
       // For now, we'll load from local state since there's no specific chat history API
       // This could be enhanced later with a proper chat history endpoint
