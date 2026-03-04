@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/progress_provider.dart';
 import '../../providers/gamification_provider.dart';
+import '../../providers/settings_provider.dart';
 import '../../widgets/streak_card.dart';
 
 class ProfileScreen extends ConsumerWidget {
@@ -20,11 +21,15 @@ class ProfileScreen extends ConsumerWidget {
     // Calculate stats from progress entries
     final daysActive = progressState.entries.length;
     final goalsMetCount = 0; // TODO: Calculate from actual goals completion
-    
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Profile'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => context.push('/settings'),
+          ),
           IconButton(
             icon: const Icon(Icons.edit),
             onPressed: () {
@@ -73,9 +78,9 @@ class ProfileScreen extends ConsumerWidget {
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 24),
-            
+
             // Stats Cards
             Row(
               children: [
@@ -209,7 +214,7 @@ class ProfileScreen extends ConsumerWidget {
                 'Manage your notifications',
                 Icons.notifications,
                 onTap: () {
-                  // TODO: Navigate to notifications
+                  context.push('/settings');
                 },
               ),
               const Divider(height: 1),
@@ -219,7 +224,7 @@ class ProfileScreen extends ConsumerWidget {
                 'Account security settings',
                 Icons.shield_outlined,
                 onTap: () {
-                  // TODO: Navigate to privacy settings
+                  context.push('/settings');
                 },
               ),
               const Divider(height: 1),
@@ -235,9 +240,9 @@ class ProfileScreen extends ConsumerWidget {
             ],
           ),
         ),
-        
+
         const SizedBox(height: 24),
-        
+
         // Logout Button
         SizedBox(
           width: double.infinity,
@@ -260,7 +265,7 @@ class ProfileScreen extends ConsumerWidget {
                   ],
                 ),
               );
-              
+
               if (shouldLogout == true) {
                 // Show loading while syncing
                 final scaffoldMessenger = ScaffoldMessenger.of(context);

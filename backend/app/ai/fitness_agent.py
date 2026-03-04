@@ -6,7 +6,6 @@ Implements context-aware AI workout planning with hierarchical memory
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.models.user import User
@@ -14,6 +13,7 @@ from app.models.fitness import FitnessPlan, Workout, Exercise
 from app.memory.hierarchical_memory import HierarchicalMemory
 from app.tools.fitness_tools import ExerciseDatabase
 from app.core.config import settings
+from app.core.llm_factory import get_llm, get_fast_llm
 
 
 class FitnessAgent:
@@ -21,17 +21,13 @@ class FitnessAgent:
     AI Agent for generating personalized fitness plans
     Uses hierarchical memory for context management
     """
-    
+
     def __init__(self, db: AsyncSession):
         self.db = db
-        self.llm = ChatOpenAI(
-            model=settings.AI_MODEL,
-            temperature=settings.AI_TEMPERATURE,
-            api_key=settings.OPENAI_API_KEY
-        )
+        self.llm = get_llm()
         self.memory = HierarchicalMemory(db)
         self.exercise_db = ExerciseDatabase()
-        
+
     async def generate_weekly_plan(
         self,
         user: User,
@@ -39,29 +35,29 @@ class FitnessAgent:
     ) -> FitnessPlan:
         """
         Generate a personalized weekly workout plan
-        
+
         Args:
             user: User object with profile data
             start_date: Week start date (defaults to next Monday)
-            
+
         Returns:
             FitnessPlan with 7 days of workouts
         """
         if start_date is None:
             start_date = self._get_next_monday()
-            
+
         # Retrieve user context
         context = await self.memory.get_user_context(
             user_id=user.id,
             context_type="fitness_planning"
         )
-        
+
         # Generate workouts using AI
         weekly_workouts = await self._generate_weekly_workouts(user, context)
-        
+
         # Calculate end date
         end_date = start_date + timedelta(days=6)
-        
+
         # Create FitnessPlan in database (without workouts first)
         workout_plan = FitnessPlan(
             user_id=user.id,
@@ -70,10 +66,10 @@ class FitnessAgent:
             created_by_ai=True,
             ai_model_version=settings.AI_MODEL
         )
-        
+
         self.db.add(workout_plan)
         await self.db.flush()  # Get plan_id before adding workouts
-        
+
         # Add workouts with plan_id
         for workout in weekly_workouts:
             workout.plan_id = workout_plan.id
@@ -95,7 +91,7 @@ class FitnessAgent:
         )
 
         return workout_plan
-        
+
     async def _generate_weekly_workouts(
         self,
         user: User,
@@ -107,12 +103,8 @@ class FitnessAgent:
         system_prompt = self._build_fitness_system_prompt()
         user_prompt = self._build_fitness_user_prompt(user, context)
 
-        # Use gpt-4o-mini for faster responses
-        fast_llm = ChatOpenAI(
-            model="gpt-4o-mini",
-            temperature=0.7,
-            api_key=settings.OPENAI_API_KEY
-        )
+        # Use fast LLM for workout generation (cheaper and faster)
+        fast_llm = get_fast_llm()
 
         response = await fast_llm.ainvoke([
             SystemMessage(content=system_prompt),
@@ -121,7 +113,7 @@ class FitnessAgent:
 
         workouts = await self._parse_workout_response(response.content)
         return workouts
-        
+
     def _build_fitness_system_prompt(self) -> str:
         """System prompt for fitness agent"""
         import random
@@ -210,7 +202,7 @@ Example:
 Include 1-2 rest days based on intensity and user recovery ability.
 Be CREATIVE and DIVERSE with exercise selection!
 RESPOND WITH ONLY THE JSON ARRAY."""
-        
+
     def _build_fitness_user_prompt(
         self,
         user: User,
@@ -235,15 +227,21 @@ RESPOND WITH ONLY THE JSON ARRAY."""
 USER PROFILE:
 - Age: {profile.age if profile else 'N/A'}
 - Gender: {profile.gender if profile else 'N/A'}
+- Weight: {float(profile.weight) if profile and profile.weight else 'N/A'} kg
+- Height: {float(profile.height) if profile and profile.height else 'N/A'} cm
 - Fitness Level: {profile.fitness_experience if profile else 'beginner'}
 - Primary Goal: {profile.primary_goal if profile else 'general fitness'}
 - Activity Level: {profile.activity_level if profile else 'moderate'}
+- Preferred Workout Days/Week: {profile.workout_days_per_week if profile and profile.workout_days_per_week else '4-5'}
+- Preferred Workout Duration: {profile.workout_duration if profile and profile.workout_duration else '45-60 min'}
+- Preferred Time: {profile.preferred_workout_time if profile and profile.preferred_workout_time else 'flexible'}
 
 VARIETY REQUIREMENTS:
 - Include at least 3 different exercise types from: {exercise_hint}
 - Each strength day should target different muscle groups
 - Mix training intensities throughout the week
 - No exercise should be repeated across days
+- Schedule REST days based on the user's preferred workout days per week
 
 """
 
@@ -252,12 +250,32 @@ VARIETY REQUIREMENTS:
         else:
             prompt += "AVAILABLE EQUIPMENT: Full gym access (dumbbells, barbells, machines, cables)\n"
 
-        if context.get("past_workouts"):
-            prompt += f"\nPAST WORKOUT PATTERNS: {context['past_workouts']}\n"
+        if profile and profile.fitness_preferences:
+            prompt += f"\nFITNESS PREFERENCES: {profile.fitness_preferences}\n"
+
+        # Add context from hierarchical memory for adaptive planning
+        episodic = context.get("episodic_memory", {})
+        fitness_history = episodic.get("fitness_history", [])
+        if fitness_history:
+            prompt += f"\nPAST WORKOUT PLANS (adapt and progress from these):\n"
+            for hist in fitness_history[:3]:
+                prompt += f"  - Week of {hist.get('week_start', 'N/A')}: {hist.get('workout_count', 0)} workouts\n"
+            prompt += "Ensure this week's plan builds on previous weeks with progressive overload.\n"
+
+        # Add progress patterns for adaptation
+        progress_patterns = episodic.get("progress_patterns", {})
+        if progress_patterns:
+            consistency = progress_patterns.get("consistency_score", 0)
+            if consistency > 0:
+                prompt += f"\nUSER ADHERENCE: {consistency:.0f}% consistency. "
+                if consistency < 50:
+                    prompt += "User struggles with consistency — suggest simpler, shorter workouts.\n"
+                elif consistency > 80:
+                    prompt += "User is very consistent — can handle challenging progressive plans.\n"
 
         prompt += "\nGenerate a creative and diverse 7-day workout plan as JSON:"
         return prompt
-        
+
     async def _parse_workout_response(self, response: str) -> List[Workout]:
         """Parse AI response into Workout objects with nested Exercise objects"""
         import json
@@ -309,7 +327,7 @@ VARIETY REQUIREMENTS:
             logger.error(f"Attempted to parse (first 500 chars): {json_str[:500]}")
             logger.error(f"Original response (first 500 chars): {response[:500]}")
             return self._generate_fallback_workouts()
-            
+
         workouts = []
         for workout_data in workouts_data:
             # Create workout without exercises first
@@ -322,7 +340,7 @@ VARIETY REQUIREMENTS:
                 estimated_calories=workout_data.get("estimated_calories"),
                 intensity_level=workout_data.get("intensity_level")
             )
-            
+
             # Create exercises (will be added to workout via relationship)
             for idx, ex_data in enumerate(workout_data.get("exercises", [])):
                 # Parse reps - handle strings like "8-10" or "to failure"
@@ -360,11 +378,11 @@ VARIETY REQUIREMENTS:
                     video_url=ex_data.get("video_url")
                 )
                 workout.exercises.append(exercise)
-            
+
             workouts.append(workout)
-            
+
         return workouts
-        
+
     def _generate_fallback_workouts(self) -> List[Workout]:
         """Generate simple fallback workout plan"""
         workout_templates = [
@@ -376,7 +394,7 @@ VARIETY REQUIREMENTS:
             {"day": 5, "name": "Cardio Intervals", "type": "cardio"},
             {"day": 6, "name": "Rest Day", "type": "rest"}
         ]
-        
+
         workouts = []
         for template in workout_templates:
             workout = Workout(
@@ -386,7 +404,7 @@ VARIETY REQUIREMENTS:
                 duration_minutes=30 if template["type"] != "rest" else 0,
                 description=f"{template['name']} workout"
             )
-            
+
             # Add basic exercise for non-rest days
             if template["type"] != "rest":
                 exercise = Exercise(
@@ -399,11 +417,11 @@ VARIETY REQUIREMENTS:
                     muscle_groups=["full_body"]
                 )
                 workout.exercises.append(exercise)
-            
+
             workouts.append(workout)
-            
+
         return workouts
-        
+
     def _get_next_monday(self) -> datetime:
         """Get the next Monday's date"""
         today = datetime.now().date()

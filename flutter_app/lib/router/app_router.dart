@@ -16,6 +16,9 @@ import '../screens/ai/ai_chat_screen.dart';
 import '../screens/profile/profile_screen.dart';
 import '../screens/subscription/subscription_screen.dart';
 import '../screens/achievements/achievements_screen.dart';
+import '../screens/runs/run_history_screen.dart';
+import '../screens/runs/run_tracking_screen.dart';
+import '../screens/profile/settings_screen.dart';
 import '../screens/main_layout.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -96,7 +99,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: 'onboarding',
         builder: (context, state) => const OnboardingScreen(),
       ),
-      
+
       // Main App Routes (Protected)
       ShellRoute(
         builder: (context, state, child) => MainLayout(child: child),
@@ -150,6 +153,21 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/achievements',
             name: 'achievements',
             builder: (context, state) => const AchievementsScreen(),
+          ),
+          GoRoute(
+            path: '/runs',
+            name: 'runs',
+            builder: (context, state) => const RunHistoryScreen(),
+          ),
+          GoRoute(
+            path: '/run-tracking',
+            name: 'run-tracking',
+            builder: (context, state) => const RunTrackingScreen(),
+          ),
+          GoRoute(
+            path: '/settings',
+            name: 'settings',
+            builder: (context, state) => const SettingsScreen(),
           ),
         ],
       ),

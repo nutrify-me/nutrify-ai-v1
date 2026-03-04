@@ -1,6 +1,11 @@
+import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logger/logger.dart';
 import '../models/progress.dart';
 import '../services/api_service.dart';
+import '../services/cache_service.dart';
+
+final _logger = Logger();
 
 // Progress State
 class ProgressState {
@@ -27,38 +32,78 @@ class ProgressState {
   }
 }
 
-// Progress Notifier
+// Progress Notifier — now with local-first caching
 class ProgressNotifier extends StateNotifier<ProgressState> {
   final ApiService _apiService;
+  static const _cacheKey = 'progress_entries';
 
   ProgressNotifier(this._apiService) : super(const ProgressState());
 
   Future<void> loadProgressEntries() async {
     state = state.copyWith(isLoading: true, error: null);
-    
+
+    // Layer 1: Show cached data immediately
+    try {
+      final cached = await CacheService.instance.get(_cacheKey);
+      if (cached != null) {
+        final list = jsonDecode(cached) as List;
+        final cachedEntries =
+            list.map((e) => ProgressEntry.fromJson(e)).toList();
+        state = state.copyWith(isLoading: false, entries: cachedEntries);
+        // Background refresh (don't await)
+        _refreshFromServer();
+        return;
+      }
+    } catch (e) {
+      _logger.w('Cache miss for progress: $e');
+    }
+
+    // Layer 2: No cache — fetch from server
+    await _refreshFromServer();
+  }
+
+  Future<void> _refreshFromServer() async {
     try {
       final entries = await _apiService.getProgressEntries();
-      state = state.copyWith(
-        isLoading: false,
-        entries: entries,
+      // Update cache
+      await CacheService.instance.set(
+        _cacheKey,
+        jsonEncode(entries.map((e) => e.toJson()).toList()),
       );
+      // Only update state if data actually changed
+      if (!_entriesMatch(state.entries, entries)) {
+        state = state.copyWith(isLoading: false, entries: entries);
+      } else {
+        state = state.copyWith(isLoading: false);
+      }
     } catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: e.toString(),
-      );
+      // If we already have cached data, don't show error
+      if (state.entries.isNotEmpty) {
+        state = state.copyWith(isLoading: false);
+        _logger.w('Background refresh failed (using cache): $e');
+      } else {
+        state = state.copyWith(isLoading: false, error: e.toString());
+      }
     }
+  }
+
+  bool _entriesMatch(List<ProgressEntry> a, List<ProgressEntry> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i].id != b[i].id) return false;
+    }
+    return true;
   }
 
   Future<void> addProgressEntry(ProgressEntryCreate entry) async {
     try {
+      // Optimistic: add to state immediately with temp data
       final newEntry = await _apiService.createProgressEntry(entry);
-      // Insert new entry at the beginning and sort by date (newest first)
       final updatedEntries = [newEntry, ...state.entries];
       updatedEntries.sort((a, b) => b.entryDate.compareTo(a.entryDate));
-      state = state.copyWith(
-        entries: updatedEntries,
-      );
+      state = state.copyWith(entries: updatedEntries);
+      // Update cache
+      await _updateCache(updatedEntries);
     } catch (e) {
       state = state.copyWith(error: e.toString());
     }
@@ -70,7 +115,7 @@ class ProgressNotifier extends StateNotifier<ProgressState> {
       final updatedEntries = state.entries.map((e) {
         return e.id == updatedEntry.id ? updatedEntry : e;
       }).toList();
-      
+
       state = state.copyWith(entries: updatedEntries);
     } catch (e) {
       state = state.copyWith(error: e.toString());
@@ -80,13 +125,13 @@ class ProgressNotifier extends StateNotifier<ProgressState> {
   Future<void> addWaterIntake(int ml) async {
     try {
       final today = DateTime.now().toIso8601String().split('T')[0];
-      
+
       // Find today's entry
       final todayEntry = state.entries.cast<ProgressEntry?>().firstWhere(
         (e) => e?.entryDate == today,
         orElse: () => null,
       );
-      
+
       if (todayEntry != null) {
         // Update existing entry
         final newIntake = (todayEntry.waterIntakeMl ?? 0) + ml;
@@ -129,8 +174,20 @@ class ProgressNotifier extends StateNotifier<ProgressState> {
       await _apiService.deleteProgressEntry(entryId);
       final updatedEntries = state.entries.where((e) => e.id != entryId).toList();
       state = state.copyWith(entries: updatedEntries);
+      await _updateCache(updatedEntries);
     } catch (e) {
       state = state.copyWith(error: e.toString());
+    }
+  }
+
+  Future<void> _updateCache(List<ProgressEntry> entries) async {
+    try {
+      await CacheService.instance.set(
+        _cacheKey,
+        jsonEncode(entries.map((e) => e.toJson()).toList()),
+      );
+    } catch (e) {
+      _logger.w('Failed to update progress cache: $e');
     }
   }
 }

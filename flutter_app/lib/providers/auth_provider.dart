@@ -2,6 +2,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
 import '../services/sync_service.dart';
+import '../services/data_repository.dart';
+import '../services/offline_mutation_queue.dart';
+import '../services/cache_service.dart';
+import '../services/local_database.dart';
 
 // Auth status enum for cleaner state management
 enum AuthStatus {
@@ -86,6 +90,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
           isLoading: false,
           status: hasOnboarded ? AuthStatus.authenticated : AuthStatus.needsOnboarding,
         );
+
+        // Warm all caches + process offline queue in background
+        if (hasOnboarded) {
+          _warmCachesInBackground();
+        }
       } catch (e) {
         // Profile might not exist yet (404) - needs onboarding
         state = state.copyWith(
@@ -101,6 +110,28 @@ class AuthNotifier extends StateNotifier<AuthState> {
         status: AuthStatus.unauthenticated,
       );
     }
+  }
+
+  /// Preload all caches + flush offline queue in background
+  void _warmCachesInBackground() {
+    Future.microtask(() async {
+      try {
+        // 1. Initialize cache service
+        // CacheService initializes lazily on first access
+
+        // 2. Preload common data into SQLite cache
+        final repo = DataRepository(_apiService, CacheService.instance);
+        await repo.preloadData();
+
+        // 3. Process any mutations queued while offline
+        await OfflineMutationQueue.instance.processQueue();
+
+        // 4. Start periodic sync
+        SyncService().initialize();
+      } catch (e) {
+        // Non-fatal — app works without warm cache
+      }
+    });
   }
 
   Future<bool> register({
@@ -181,6 +212,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
     // Safe to logout now
     await _apiService.logout();
+
+    // Clear ALL cached data so next user doesn't see previous user's data
+    try {
+      await CacheService.instance.clearAll();
+      await LocalDatabase.clearAllData();
+    } catch (e) {
+      // Non-fatal
+    }
+
     state = const AuthState(status: AuthStatus.unauthenticated);
     return LogoutResult.success;
   }
@@ -188,6 +228,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
   /// Force logout without syncing (use with caution!)
   Future<void> forceLogout() async {
     await _apiService.logout();
+
+    // Clear ALL cached data
+    try {
+      await CacheService.instance.clearAll();
+      await LocalDatabase.clearAllData();
+    } catch (e) {
+      // Non-fatal
+    }
+
     state = const AuthState(status: AuthStatus.unauthenticated);
   }
 

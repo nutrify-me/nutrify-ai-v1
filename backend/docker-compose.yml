@@ -1,6 +1,26 @@
 version: '3.8'
 
 services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: nutrify-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: nutrify_user
+      POSTGRES_PASSWORD: nutrify_password
+      POSTGRES_DB: nutrify_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nutrify_user -d nutrify_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nutrify-network
+
   # Redis for caching and session management
   redis:
     image: redis:7-alpine
@@ -29,10 +49,12 @@ services:
     env_file:
       - .env
     environment:
-      # Override Redis URL for container networking
+      # Override for container networking
       REDIS_URL: redis://redis:6379/0
-      # Use Neon PostgreSQL from .env (already configured)
+      DATABASE_URL: postgresql+asyncpg://nutrify_user:nutrify_password@postgres:5432/nutrify_db
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
@@ -43,6 +65,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  postgres_data:
   redis_data:
 
 networks:

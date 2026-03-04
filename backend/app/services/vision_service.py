@@ -3,11 +3,8 @@
 import os
 import base64
 from typing import Dict, List, Optional
-import openai
-from openai import AsyncOpenAI
 
-# Initialize OpenAI client
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+from app.core.llm_factory import get_vision_client, get_vision_model
 
 
 class VisionService:
@@ -54,9 +51,10 @@ Return a JSON object with the following structure:
 
 Be as accurate as possible with portion sizes and nutritional estimates. If you can't identify a food clearly, set confidence to a low value."""
 
-            # Call OpenAI Vision API
-            response = await client.chat.completions.create(
-                model="gpt-4o",  # GPT-4 with vision
+            # Call Vision API (works with both OpenAI and Azure OpenAI)
+            vision_client = get_vision_client()
+            response = await vision_client.chat.completions.create(
+                model=get_vision_model(),
                 messages=[
                     {
                         "role": "user",
@@ -126,8 +124,8 @@ Return a JSON object with the following structure:
 
 Be as accurate as possible with portion sizes and nutritional estimates. If you can't identify a food clearly, set confidence to a low value."""
 
-            response = await client.chat.completions.create(
-                model="gpt-4o",
+            response = await get_vision_client().chat.completions.create(
+                model=get_vision_model(),
                 messages=[
                     {
                         "role": "user",
@@ -187,8 +185,8 @@ Return a JSON object with this structure:
   ]
 }}"""
 
-            response = await client.chat.completions.create(
-                model="gpt-4o-mini",
+            response = await get_vision_client().chat.completions.create(
+                model=get_vision_model(),
                 messages=[
                     {
                         "role": "user",

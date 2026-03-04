@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logger/logger.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../models/user.dart';
 import '../models/nutrition.dart';
 import '../models/fitness.dart';
@@ -22,16 +22,14 @@ class ApiException implements Exception {
 
   @override
   String toString() => 'ApiException: $message';
-} 
+}
 
 class ApiService {
-  // Use your computer's local IP for both emulator and physical device
-  // Run: ipconfig getifaddr en0 (Mac) or ipconfig (Windows) to get your IP
-  // This works for both emulator and physical device on the same network
-  static const String _baseUrl = 'http://192.168.1.25:8000/api/v1';
+  // Azure-hosted backend — works from anywhere
+  static const String _baseUrl = 'https://nutrify-backend.yellowdesert-8e1592bf.centralindia.azurecontainerapps.io/api/v1';
   static const String _storageKeyToken = 'auth_token';
   static const String _storageKeyRefreshToken = 'refresh_token';
-  
+
   final http.Client _client = http.Client();
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
   final Logger _logger = Logger();
@@ -227,20 +225,21 @@ class ApiService {
       }
 
       final responseData = json.decode(response.body);
-      
+
       if (fromJson != null) {
         return fromJson(responseData);
       }
-      
+
       return responseData as T;
-    } on SocketException {
-      throw ApiException('Network connection failed');
     } on FormatException {
       throw ApiException('Invalid response format');
     } on TimeoutException {
       throw ApiException('Request timed out. Please try again.');
     } catch (e) {
       if (e is ApiException) rethrow;
+      if (e.toString().contains('SocketException') || e.toString().contains('Connection refused')) {
+        throw ApiException('Network connection failed');
+      }
       throw ApiException('Request failed: $e');
     }
   }
@@ -1148,6 +1147,41 @@ class ApiService {
       ttl: const Duration(minutes: 5),
       forceRefresh: forceRefresh,
     );
+  }
+
+  // ─── Run Activity Methods ──────────────────────────────
+
+  Future<Map<String, dynamic>> createRunActivity(Map<String, dynamic> data) async {
+    return _makeRequest<Map<String, dynamic>>(
+      'POST', '/runs',
+      body: data,
+      fromJson: (json) => json as Map<String, dynamic>,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getRunActivities({int limit = 20, int offset = 0}) async {
+    return _makeRequest<List<Map<String, dynamic>>>(
+      'GET', '/runs?limit=$limit&offset=$offset',
+      fromJson: (json) => (json as List).map((e) => e as Map<String, dynamic>).toList(),
+    );
+  }
+
+  Future<Map<String, dynamic>> getRunActivity(String id) async {
+    return _makeRequest<Map<String, dynamic>>(
+      'GET', '/runs/$id',
+      fromJson: (json) => json as Map<String, dynamic>,
+    );
+  }
+
+  Future<Map<String, dynamic>> getRunStats() async {
+    return _makeRequest<Map<String, dynamic>>(
+      'GET', '/runs/stats',
+      fromJson: (json) => json as Map<String, dynamic>,
+    );
+  }
+
+  Future<void> deleteRunActivity(String id) async {
+    await _makeRequest('DELETE', '/runs/$id');
   }
 }
 

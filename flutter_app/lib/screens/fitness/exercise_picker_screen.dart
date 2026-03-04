@@ -46,14 +46,14 @@ class _ExercisePickerScreenState extends ConsumerState<ExercisePickerScreen> {
     final libraryState = ref.watch(exerciseLibraryProvider);
     final theme = Theme.of(context);
 
-    // Force light theme colors (always white background)
-    const backgroundColor = Color(0xFFFAFAFA); // Colors.grey[50]
-    const surfaceColor = Colors.white;
-    const cardColor = Color(0xFFF5F5F5); // Colors.grey[100]
-    const textColor = Color(0xFF212121); // Colors.grey[900]
-    const subtitleColor = Color(0xFF757575); // Colors.grey[600]
-    const borderColor = Color(0xFFE0E0E0); // Colors.grey[300]
-    const isDark = false; // Always use light theme styling
+    // Theme-aware colors
+    final backgroundColor = theme.scaffoldBackgroundColor;
+    final surfaceColor = theme.colorScheme.surface;
+    final cardColor = theme.colorScheme.surfaceContainerHighest;
+    final textColor = theme.colorScheme.onSurface;
+    final subtitleColor = theme.colorScheme.onSurfaceVariant;
+    final borderColor = theme.dividerColor;
+    final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
       backgroundColor: backgroundColor,
@@ -347,7 +347,7 @@ class _ExercisePickerScreenState extends ConsumerState<ExercisePickerScreen> {
             label,
             style: TextStyle(color: subtitleColor, fontSize: 13),
           ),
-          dropdownColor: Colors.white, // Always use light theme
+          dropdownColor: Theme.of(context).colorScheme.surface,
           style: TextStyle(color: textColor, fontSize: 13),
           items: [
             DropdownMenuItem<String?>(
@@ -623,8 +623,8 @@ class _ExercisePickerScreenState extends ConsumerState<ExercisePickerScreen> {
             padding: EdgeInsets.only(
               bottom: MediaQuery.of(context).viewInsets.bottom,
             ),
-            decoration: const BoxDecoration(
-              color: Colors.white, // Always use light theme
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
               borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
             ),
             child: SafeArea(
@@ -716,7 +716,7 @@ class _ExercisePickerScreenState extends ConsumerState<ExercisePickerScreen> {
                             // Determine category and equipment based on selectedType
                             String category;
                             String equipment;
-                            
+
                             switch (selectedType!) {
                               case LibraryExerciseType.cardio:
                                 category = 'cardio';
@@ -735,7 +735,7 @@ class _ExercisePickerScreenState extends ConsumerState<ExercisePickerScreen> {
                                 equipment = 'other';
                                 break;
                             }
-                            
+
                             final customExercise = LibraryExercise(
                               id: 'custom_${DateTime.now().millisecondsSinceEpoch}',
                               name: nameController.text.trim(),

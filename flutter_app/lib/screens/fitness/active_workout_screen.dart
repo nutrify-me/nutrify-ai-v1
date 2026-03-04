@@ -113,11 +113,10 @@ class _ActiveWorkoutScreenState extends ConsumerState<ActiveWorkoutScreen> {
     final sessionState = ref.watch(workoutSessionProvider);
     final notifier = ref.read(workoutSessionProvider.notifier);
     final theme = Theme.of(context);
-    
-    // Force light theme
-    const isDark = false;
-    const backgroundColor = Color(0xFFF5F5F5); // Colors.grey[100]
-    const surfaceColor = Colors.white;
+
+    final isDark = theme.brightness == Brightness.dark;
+    final backgroundColor = theme.scaffoldBackgroundColor;
+    final surfaceColor = theme.colorScheme.surface;
 
     return PopScope(
       canPop: !sessionState.hasActiveSession,
@@ -1110,7 +1109,7 @@ class _ActiveWorkoutScreenState extends ConsumerState<ActiveWorkoutScreen> {
       try {
         // Invalidate the streak provider to force refresh on dashboard
         ref.invalidate(streakProvider);
-        
+
         await Future.wait<void>([
           ref.read(gamificationProvider.notifier).loadStreak(),
           ref.read(fitnessNotifierProvider.notifier).loadWeeklyStats(forceRefresh: true),
@@ -1119,7 +1118,7 @@ class _ActiveWorkoutScreenState extends ConsumerState<ActiveWorkoutScreen> {
         // Log but don't block navigation
         debugPrint('Failed to refresh streak/stats: $e');
       }
-      
+
       if (mounted) {
         Navigator.pushReplacement(
           context,

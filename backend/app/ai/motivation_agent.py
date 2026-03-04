@@ -6,13 +6,13 @@ Implements conversational AI for motivation and guidance
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
 from app.models.user import User
 from app.models.progress import ChatMessage, ProgressEntry
 from app.memory.hierarchical_memory import HierarchicalMemory
 from app.core.config import settings
+from app.core.llm_factory import get_llm
 
 
 class MotivationAgent:
@@ -20,16 +20,12 @@ class MotivationAgent:
     AI Agent for coaching, motivation, and chat interactions
     Provides personalized insights and support
     """
-    
+
     def __init__(self, db: AsyncSession):
         self.db = db
-        self.llm = ChatOpenAI(
-            model=settings.AI_MODEL,
-            temperature=0.8,  # Higher temperature for more conversational responses
-            api_key=settings.OPENAI_API_KEY
-        )
+        self.llm = get_llm(temperature=0.8)
         self.memory = HierarchicalMemory(db)
-        
+
     async def chat(
         self,
         user: User,
@@ -104,23 +100,23 @@ class MotivationAgent:
         )
 
         return ai_msg
-        
+
     async def generate_weekly_insights(
         self,
         user: User
     ) -> str:
         """
         Generate weekly progress insights and recommendations
-        
+
         Args:
             user: User object
-            
+
         Returns:
             Insight text
         """
         # Get user's progress data for the week
         week_ago = datetime.utcnow() - timedelta(days=7)
-        
+
         from sqlalchemy import select
         stmt = select(ProgressEntry).where(
             ProgressEntry.user_id == user.id,
@@ -128,24 +124,24 @@ class MotivationAgent:
         ).order_by(ProgressEntry.entry_date.desc())
         result = await self.db.execute(stmt)
         progress_entries = result.scalars().all()
-        
+
         # Retrieve user context
         context = await self.memory.get_user_context(
             user_id=user.id,
             context_type="insights"
         )
-        
+
         # Build insight generation prompt
         system_prompt = self._build_insights_system_prompt()
         user_prompt = self._build_insights_user_prompt(user, progress_entries, context)
-        
+
         response = await self.llm.ainvoke([
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_prompt)
         ])
-        
+
         return response.content
-        
+
     def _build_chat_messages(
         self,
         user: User,
@@ -245,7 +241,7 @@ IMPORTANT: You have access to their actual progress data above. Use it to make y
             formatted.append(entry_str)
 
         return "\n".join(formatted) if formatted else "No detailed progress data"
-        
+
     def _build_insights_system_prompt(self) -> str:
         """System prompt for insights generation"""
         return """You are an expert fitness and nutrition analyst.
@@ -260,7 +256,7 @@ Key principles:
 - Make recommendations concrete and achievable
 
 Keep insights concise, motivating, and data-driven."""
-        
+
     def _build_insights_user_prompt(
         self,
         user: User,
@@ -269,7 +265,7 @@ Keep insights concise, motivating, and data-driven."""
     ) -> str:
         """Build user-specific insights prompt"""
         profile = user.profile
-        
+
         prompt = f"""Analyze this week's progress and provide insights:
 
 USER PROFILE:
@@ -278,7 +274,7 @@ USER PROFILE:
 
 WEEKLY PROGRESS DATA:
 """
-        
+
         for entry in progress_entries:
             prompt += f"""
 - Date: {entry.date.strftime('%Y-%m-%d')}
@@ -287,12 +283,12 @@ WEEKLY PROGRESS DATA:
   Workouts Completed: {entry.workouts_completed or 0}
   Notes: {entry.notes or 'None'}
 """
-        
+
         if not progress_entries:
             prompt += "No progress entries recorded this week.\n"
-            
+
         prompt += """
 Generate 3-5 key insights and recommendations based on this data.
 Focus on actionable advice and celebrating wins."""
-        
+
         return prompt

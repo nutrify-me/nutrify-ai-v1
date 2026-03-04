@@ -8,7 +8,7 @@ import structlog
 from app.core.config import settings
 from app.core.database import init_db, close_db
 from app.core.redis import redis_client
-from app.api.routes import auth, users, nutrition, fitness, progress, ai, subscriptions, workout_sessions, gamification
+from app.api.routes import auth, users, nutrition, fitness, progress, ai, subscriptions, workout_sessions, gamification, runs
 
 # Configure structured logging
 structlog.configure(
@@ -27,23 +27,32 @@ async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Startup
     logger.info("Starting Nutrify-AI Backend", version=settings.APP_VERSION)
-    
+
     # Initialize database
     await init_db()
     logger.info("Database initialized")
-    
-    # Connect to Redis
-    await redis_client.connect()
-    logger.info("Redis connected")
-    
+
+    # Connect to Redis (optional — app works without it)
+    try:
+        if settings.REDIS_URL and settings.REDIS_URL.startswith(("redis://", "rediss://")):
+            await redis_client.connect()
+            logger.info("Redis connected")
+        else:
+            logger.info("Redis not configured, skipping")
+    except Exception as e:
+        logger.warning("Redis connection failed, continuing without cache", error=str(e))
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down Nutrify-AI Backend")
-    
+
     # Close connections
     await close_db()
-    await redis_client.close()
+    try:
+        await redis_client.close()
+    except Exception:
+        pass
     logger.info("Connections closed")
 
 
@@ -114,6 +123,7 @@ app.include_router(ai.router, prefix=f"{settings.api_v1_prefix}/ai", tags=["AI"]
 app.include_router(subscriptions.router, prefix=f"{settings.api_v1_prefix}/subscriptions", tags=["Subscriptions"])
 app.include_router(workout_sessions.router, prefix=f"{settings.api_v1_prefix}/workout-sessions", tags=["Workout Sessions"])
 app.include_router(gamification.router, prefix=f"{settings.api_v1_prefix}/gamification", tags=["Gamification"])
+app.include_router(runs.router, prefix=f"{settings.api_v1_prefix}/runs", tags=["Run Tracking"])
 
 
 # Global exception handler
@@ -126,7 +136,7 @@ async def global_exception_handler(request, exc):
         path=request.url.path,
         method=request.method
     )
-    
+
     return JSONResponse(
         status_code=500,
         content={
@@ -137,7 +147,7 @@ async def global_exception_handler(request, exc):
 
 if __name__ == "__main__":
     import uvicorn
-    
+
     uvicorn.run(
         "app.main:app",
         host=settings.HOST,

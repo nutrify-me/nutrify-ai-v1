@@ -35,7 +35,7 @@ class _BottomNavigation extends StatelessWidget {
       case '/progress':
         currentIndex = 3;
         break;
-      case '/ai-chat':
+      case '/runs':
         currentIndex = 4;
         break;
     }
@@ -58,20 +58,7 @@ class _BottomNavigation extends StatelessWidget {
             context.go('/progress');
             break;
           case 4:
-            // AI Coach - Coming Soon
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Row(
-                  children: [
-                    Icon(Icons.psychology, color: Colors.white),
-                    SizedBox(width: 12),
-                    Text('AI Coach - Coming Soon!'),
-                  ],
-                ),
-                backgroundColor: Colors.deepPurple,
-                duration: Duration(seconds: 2),
-              ),
-            );
+            context.go('/runs');
             break;
         }
       },
@@ -97,9 +84,9 @@ class _BottomNavigation extends StatelessWidget {
           label: 'Progress',
         ),
         BottomNavigationBarItem(
-          icon: Icon(Icons.smart_toy_outlined),
-          activeIcon: Icon(Icons.smart_toy),
-          label: 'AI Coach',
+          icon: Icon(Icons.directions_run_outlined),
+          activeIcon: Icon(Icons.directions_run),
+          label: 'Running',
         ),
       ],
     );

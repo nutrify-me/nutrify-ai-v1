@@ -5,6 +5,7 @@ from typing import List
 from datetime import datetime, timedelta
 
 from app.core.database import get_db
+from app.core.cache import cache_response, invalidate_cache
 from app.api.dependencies import get_current_user
 from app.models.user import User
 from app.models.progress import ProgressEntry
@@ -61,7 +62,7 @@ async def log_progress(
         )
     )
     existing_entry = result.scalar_one_or_none()
-    
+
     if existing_entry:
         # Update existing entry
         update_data = progress_data.model_dump(exclude_unset=True)
@@ -94,7 +95,7 @@ async def log_progress(
                 existing_entry.notes = value
             elif field == "photos" and value is not None:
                 existing_entry.photos = value
-        
+
         entry = existing_entry
     else:
         # Create new entry
@@ -116,7 +117,7 @@ async def log_progress(
             photos=progress_data.photos,
         )
         db.add(entry)
-    
+
     await db.commit()
     await db.refresh(entry)
 

@@ -6,7 +6,6 @@ Implements context-aware AI meal planning with hierarchical memory
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.models.user import User
@@ -14,6 +13,7 @@ from app.models.nutrition import NutritionPlan, Meal
 from app.memory.hierarchical_memory import HierarchicalMemory
 from app.tools.nutrition_tools import NutritionDatabase
 from app.core.config import settings
+from app.core.llm_factory import get_llm, get_fast_llm
 
 
 class NutritionAgent:
@@ -21,17 +21,13 @@ class NutritionAgent:
     AI Agent for generating personalized nutrition plans
     Uses hierarchical memory for context management and cost optimization
     """
-    
+
     def __init__(self, db: AsyncSession):
         self.db = db
-        self.llm = ChatOpenAI(
-            model=settings.AI_MODEL,
-            temperature=settings.AI_TEMPERATURE,
-            api_key=settings.OPENAI_API_KEY
-        )
+        self.llm = get_llm()
         self.memory = HierarchicalMemory(db)
         self.nutrition_db = NutritionDatabase()
-        
+
     async def generate_weekly_plan(
         self,
         user: User,
@@ -39,29 +35,29 @@ class NutritionAgent:
     ) -> NutritionPlan:
         """
         Generate a personalized weekly meal plan
-        
+
         Args:
             user: User object with profile data
             start_date: Week start date (defaults to next Monday)
-            
+
         Returns:
             NutritionPlan with 7 days of meals
         """
         if start_date is None:
             start_date = self._get_next_monday()
-            
+
         # Step 1: Retrieve user context using hierarchical memory
         context = await self.memory.get_user_context(
             user_id=user.id,
             context_type="nutrition_planning"
         )
-        
+
         # Step 2: Calculate nutritional targets (daily calories & macros)
         targets = await self._calculate_nutrition_targets(user, context)
-        
+
         # Step 3: Generate weekly meals using AI
         meals = await self._generate_weekly_meals(user, targets, context)
-        
+
         # Step 4: Create NutritionPlan in database
         nutrition_plan = NutritionPlan(
             user_id=user.id,
@@ -74,10 +70,10 @@ class NutritionAgent:
             created_by_ai=True,
             adaptation_reason="AI-generated personalized meal plan"
         )
-        
+
         self.db.add(nutrition_plan)
         await self.db.flush()  # Get plan ID
-        
+
         # Add meals to plan
         for meal in meals:
             meal.plan_id = nutrition_plan.id
@@ -100,7 +96,7 @@ class NutritionAgent:
         )
 
         return nutrition_plan
-        
+
     async def _calculate_nutrition_targets(
         self,
         user: User,
@@ -118,7 +114,7 @@ class NutritionAgent:
                 "carbs_grams": 200,
                 "fat_grams": 67
             }
-            
+
         # Base calculation using Mifflin-St Jeor
         age = profile.age or 25
         weight = float(profile.weight) if profile.weight else 70.0
@@ -126,11 +122,11 @@ class NutritionAgent:
         gender = profile.gender or "male"
         activity = profile.activity_level or "moderate"
         goal = profile.primary_goal or "maintain"
-        
+
         # BMR calculation
         bmr = (10 * weight) + (6.25 * height) - (5 * age)
         bmr += 5 if gender == "male" else -161
-        
+
         # Activity multipliers
         activity_multipliers = {
             "sedentary": 1.2,
@@ -140,7 +136,7 @@ class NutritionAgent:
             "extremely_active": 1.9
         }
         tdee = bmr * activity_multipliers.get(activity, 1.55)
-        
+
         # Goal adjustments
         if goal == "weight_loss":
             daily_calories = int(tdee - 500)
@@ -148,19 +144,19 @@ class NutritionAgent:
             daily_calories = int(tdee + 300)
         else:
             daily_calories = int(tdee)
-            
+
         # Macro split (can be customized per user preferences)
         protein_grams = int(daily_calories * 0.30 / 4)  # 30% protein
         carbs_grams = int(daily_calories * 0.40 / 4)    # 40% carbs
         fat_grams = int(daily_calories * 0.30 / 9)      # 30% fat
-        
+
         return {
             "daily_calories": daily_calories,
             "protein_grams": protein_grams,
             "carbs_grams": carbs_grams,
             "fat_grams": fat_grams
         }
-        
+
     async def _generate_weekly_meals(
         self,
         user: User,
@@ -172,18 +168,13 @@ class NutritionAgent:
         Returns list of Meal objects (4 meals per day x 7 days = 28 meals)
         """
         profile = user.profile
-        
+
         # Build AI prompt with user context
         system_prompt = self._build_nutrition_system_prompt()
         user_prompt = self._build_nutrition_user_prompt(user, targets, context)
-        
-        # Call LLM for meal generation
-        # Use gpt-4o-mini for faster responses (10-15 sec vs 20-25 sec)
-        fast_llm = ChatOpenAI(
-            model="gpt-4o-mini",  # Faster and cheaper than gpt-4-turbo-preview
-            temperature=0.7,
-            api_key=settings.OPENAI_API_KEY
-        )
+
+        # Use fast LLM for meal generation (cheaper and faster)
+        fast_llm = get_fast_llm()
 
         response = await fast_llm.ainvoke([
             SystemMessage(content=system_prompt),
@@ -192,9 +183,9 @@ class NutritionAgent:
 
         # Parse AI response into structured meal data
         meals = await self._parse_meal_response(response.content, targets)
-        
+
         return meals
-        
+
     def _build_nutrition_system_prompt(self) -> str:
         """System prompt for nutrition agent"""
         import random
@@ -259,7 +250,7 @@ Return exactly 28 meals (4 per day x 7 days) as a JSON array. Each meal object m
 
 Ensure daily totals match target calories and macros. Be CREATIVE and DIVERSE with meal choices!
 RESPOND WITH ONLY THE JSON ARRAY."""
-        
+
     def _build_nutrition_user_prompt(
         self,
         user: User,
@@ -293,30 +284,54 @@ USER PROFILE:
 - Gender: {profile.gender if profile else 'N/A'}
 - Primary Goal: {profile.primary_goal if profile else 'general health'}
 - Activity Level: {profile.activity_level if profile else 'moderate'}
+- Meals Per Day: {profile.meals_per_day if profile and profile.meals_per_day else 4}
+- Cooking Time Preference: {profile.cooking_time if profile and profile.cooking_time else 'moderate'}
 
-VARIETY REQUIREMENTS:
+"""
+
+        # CRITICAL: Add dietary restrictions and allergies prominently
+        if profile and profile.dietary_restrictions:
+            restrictions = ', '.join(profile.dietary_restrictions)
+            prompt += f"""⚠️ MANDATORY DIETARY RESTRICTIONS (MUST FOLLOW — DO NOT INCLUDE ANY FOOD THAT VIOLATES THESE):
+{restrictions}
+
+"""
+        if profile and profile.allergies:
+            prompt += f"""⚠️ ALLERGIES (MUST AVOID — these can cause medical harm):
+{profile.allergies}
+
+"""
+        if profile and profile.nutrition_preferences:
+            prompt += f"NUTRITION PREFERENCES: {profile.nutrition_preferences}\n\n"
+
+        prompt += f"""VARIETY REQUIREMENTS:
 - Include at least 3 different breakfast styles from: {breakfast_hint}
 - Each dinner should feature a different main protein
 - Mix cooking methods: grilling, baking, sautéing, steaming, raw
 
 """
 
-        # Add dietary preferences/restrictions
-        if profile and profile.dietary_restrictions:
-            prompt += f"DIETARY RESTRICTIONS: {', '.join(profile.dietary_restrictions)}\n"
-        if profile and profile.allergies:
-            prompt += f"ALLERGIES: {profile.allergies}\n"
-
         # Add context from memory if available
-        if context.get("past_preferences"):
-            prompt += f"\nPAST PREFERENCES: {context['past_preferences']}\n"
-        if context.get("successful_patterns"):
-            prompt += f"\nSUCCESSFUL PATTERNS: {context['successful_patterns']}\n"
+        episodic = context.get("episodic_memory", {})
+        semantic = context.get("semantic_memory", {})
+
+        # Include past nutrition history for adaptive planning
+        nutrition_history = episodic.get("nutrition_history", [])
+        if nutrition_history:
+            prompt += f"\nPAST NUTRITION PLANS (adapt and vary from these):\n"
+            for hist in nutrition_history[:3]:
+                prompt += f"  - Week of {hist.get('week_start', 'N/A')}: {hist.get('daily_calories', 'N/A')} kcal, {hist.get('meal_count', 0)} meals\n"
+            prompt += "\n"
+
+        # Include preferences from semantic memory
+        prefs = semantic.get("preferences", {})
+        if prefs.get("dietary"):
+            prompt += f"KNOWN PREFERENCES FROM HISTORY: {', '.join(prefs['dietary'])}\n"
 
         prompt += "\nGenerate a creative and diverse 7-day meal plan as JSON:"
 
         return prompt
-        
+
     async def _parse_meal_response(
         self,
         response: str,
@@ -373,7 +388,7 @@ VARIETY REQUIREMENTS:
             logger.error(f"Attempted to parse (first 500 chars): {json_str[:500]}")
             logger.error(f"Original response (first 500 chars): {response[:500]}")
             return self._generate_fallback_meals(targets)
-            
+
         meals = []
         for meal_data in meals_data:
             meal = Meal(
@@ -395,21 +410,21 @@ VARIETY REQUIREMENTS:
                 dietary_tags=meal_data.get("dietary_tags", [])
             )
             meals.append(meal)
-            
+
         return meals
-        
+
     def _generate_fallback_meals(self, targets: Dict[str, int]) -> List[Meal]:
         """Generate simple fallback meal plan if AI parsing fails"""
         meals = []
         cal_per_meal = targets["daily_calories"] // 4  # breakfast, lunch, dinner, snack
-        
+
         meal_templates = [
             {"meal_type": "breakfast", "name": "Oatmeal with Berries", "desc": "Steel-cut oats with mixed berries"},
             {"meal_type": "lunch", "name": "Grilled Chicken Salad", "desc": "Mixed greens with grilled chicken"},
             {"meal_type": "dinner", "name": "Salmon with Vegetables", "desc": "Baked salmon with roasted vegetables"},
             {"meal_type": "snack", "name": "Greek Yogurt", "desc": "Greek yogurt with honey"}
         ]
-        
+
         for day in range(7):  # 0=Monday to 6=Sunday
             for idx, template in enumerate(meal_templates):
                 meal = Meal(
@@ -427,9 +442,9 @@ VARIETY REQUIREMENTS:
                     dietary_tags=[]
                 )
                 meals.append(meal)
-                
+
         return meals
-        
+
     def _get_next_monday(self) -> datetime:
         """Get the next Monday's date"""
         today = datetime.now().date()

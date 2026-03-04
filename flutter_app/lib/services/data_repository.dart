@@ -179,7 +179,7 @@ class DataRepository {
 
   Future<List<ProgressEntry>> _fetchAndCacheProgressEntries(int limit) async {
     try {
-      final entries = await _apiService.getProgressHistory(limit: limit);
+      final entries = await _apiService.getProgressEntries(limit: limit);
       final cacheKey = '${CacheKeys.progressEntries}_$limit';
       await _cacheService.set(
         cacheKey,
@@ -202,38 +202,20 @@ class DataRepository {
   // === Meal Logs ===
 
   /// Log meal with local-first approach
-  Future<MealLog?> logMeal(MealLogCreate mealLog) async {
+  Future<Map<String, dynamic>?> logMealData(Map<String, dynamic> mealData) async {
     try {
-      // Optimistically save to local cache
-      final tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
-      final tempLog = {
-        'id': tempId,
-        ...mealLog.toJson(),
-        'logged_at': DateTime.now().toIso8601String(),
-      };
-
-      await _cacheService.setUserData(
-        tempId,
-        DataTypes.mealLog,
-        tempLog,
-        isDirty: true, // Mark as needing sync
+      final serverLog = await _apiService.logMeal(
+        mealDate: mealData['meal_date'] ?? DateTime.now().toIso8601String().split('T')[0],
+        mealType: mealData['meal_type'] ?? 'snack',
+        customMealName: mealData['custom_meal_name'],
+        calories: mealData['calories'],
+        proteinGrams: mealData['protein_grams']?.toDouble(),
+        carbsGrams: mealData['carbs_grams']?.toDouble(),
+        fatGrams: mealData['fat_grams']?.toDouble(),
       );
-
-      // Sync to server
-      final serverLog = await _apiService.logMeal(mealLog);
-
-      // Update cache with server response
-      await _cacheService.setUserData(
-        serverLog.id,
-        DataTypes.mealLog,
-        serverLog.toJson(),
-        isDirty: false,
-      );
-
       return serverLog;
     } catch (e) {
       _logger.e('Failed to log meal: $e');
-      // Keep local copy marked as dirty for later sync
       return null;
     }
   }
