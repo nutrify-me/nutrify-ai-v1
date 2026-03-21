@@ -19,6 +19,8 @@ import '../screens/achievements/achievements_screen.dart';
 import '../screens/runs/run_history_screen.dart';
 import '../screens/runs/run_tracking_screen.dart';
 import '../screens/profile/settings_screen.dart';
+import '../screens/profile/edit_profile_screen.dart';
+import '../screens/fitness/exercise_progress_screen.dart';
 import '../screens/main_layout.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -168,6 +170,16 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/settings',
             name: 'settings',
             builder: (context, state) => const SettingsScreen(),
+          ),
+          GoRoute(
+            path: '/edit-profile',
+            name: 'edit-profile',
+            builder: (context, state) => const EditProfileScreen(),
+          ),
+          GoRoute(
+            path: '/exercise-progress',
+            name: 'exercise-progress',
+            builder: (context, state) => const ExerciseProgressScreen(),
           ),
         ],
       ),

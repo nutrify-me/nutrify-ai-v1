@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../providers/run_tracking_provider.dart';
+import '../../providers/settings_provider.dart';
 import '../../services/run_tracking_service.dart';
 
 /// Live run tracking screen with real-time map and stats
@@ -223,14 +225,22 @@ class _RunTrackingScreenState extends ConsumerState<RunTrackingScreen> {
                 ),
 
               // Primary stat: Distance
-              Text(
-                stats.formattedDistance,
-                style: const TextStyle(
-                  fontSize: 48,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -1,
-                ),
-              ),
+              Builder(builder: (context) {
+                final settings = ref.watch(settingsProvider);
+                final distKm = stats.distanceMeters / 1000;
+                final distDisplay = settings.convertDistance(distKm);
+                final label = stats.distanceMeters < 1000
+                    ? '${stats.distanceMeters.toInt()} m'
+                    : '${distDisplay.toStringAsFixed(2)} ${settings.distanceUnit}';
+                return Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 48,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -1,
+                  ),
+                );
+              }),
               const Text(
                 'DISTANCE',
                 style: TextStyle(
@@ -520,17 +530,46 @@ class _RunTrackingScreenState extends ConsumerState<RunTrackingScreen> {
   }
 
   Widget _buildErrorState(String? error) {
+    final isPermissionError = error != null &&
+        (error.contains('permission') || error.contains('Location'));
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(Icons.error_outline, color: Colors.red.shade400, size: 40),
-        const SizedBox(height: 8),
-        Text(error ?? 'Something went wrong', textAlign: TextAlign.center),
-        const SizedBox(height: 12),
-        ElevatedButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Go Back'),
+        Icon(
+          isPermissionError ? Icons.location_off : Icons.error_outline,
+          color: Colors.red.shade400,
+          size: 40,
         ),
+        const SizedBox(height: 8),
+        Text(
+          isPermissionError
+              ? 'Location permission is required to track runs'
+              : (error ?? 'Something went wrong'),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 12),
+        if (isPermissionError) ...[
+          ElevatedButton.icon(
+            onPressed: () async {
+              await Geolocator.openAppSettings();
+            },
+            icon: const Icon(Icons.settings),
+            label: const Text('Open Settings'),
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: () {
+              // Retry after user returns from settings
+              ref.read(runTrackingProvider.notifier).startRun();
+            },
+            child: const Text('Try Again'),
+          ),
+        ] else
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Go Back'),
+          ),
       ],
     );
   }

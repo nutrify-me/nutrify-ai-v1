@@ -46,12 +46,14 @@ class RunHistoryState {
   final List<Map<String, dynamic>> runs;
   final Map<String, dynamic>? stats;
   final String? error;
+  final bool hasMore;
 
   const RunHistoryState({
     this.isLoading = false,
     this.runs = const [],
     this.stats,
     this.error,
+    this.hasMore = true,
   });
 
   RunHistoryState copyWith({
@@ -59,12 +61,14 @@ class RunHistoryState {
     List<Map<String, dynamic>>? runs,
     Map<String, dynamic>? stats,
     String? error,
+    bool? hasMore,
   }) {
     return RunHistoryState(
       isLoading: isLoading ?? this.isLoading,
       runs: runs ?? this.runs,
       stats: stats ?? this.stats,
       error: error,
+      hasMore: hasMore ?? this.hasMore,
     );
   }
 }
@@ -176,6 +180,7 @@ class RunTrackingNotifier extends StateNotifier<RunTrackingState> {
 class RunHistoryNotifier extends StateNotifier<RunHistoryState> {
   final ApiService _api = ApiService();
   final Logger _logger = Logger();
+  static const _pageSize = 20;
 
   RunHistoryNotifier() : super(const RunHistoryState());
 
@@ -183,10 +188,33 @@ class RunHistoryNotifier extends StateNotifier<RunHistoryState> {
     state = state.copyWith(isLoading: true, error: null);
     try {
       final runs = await _api.getRunActivities(limit: limit, offset: offset);
-      state = state.copyWith(isLoading: false, runs: runs);
+      state = state.copyWith(
+        isLoading: false,
+        runs: runs,
+        hasMore: runs.length >= limit,
+      );
     } catch (e) {
       _logger.e('Failed to load runs: $e');
       state = state.copyWith(isLoading: false, error: e.toString());
+    }
+  }
+
+  Future<void> loadMore() async {
+    if (state.isLoading || !state.hasMore) return;
+    state = state.copyWith(isLoading: true);
+    try {
+      final moreRuns = await _api.getRunActivities(
+        limit: _pageSize,
+        offset: state.runs.length,
+      );
+      state = state.copyWith(
+        isLoading: false,
+        runs: [...state.runs, ...moreRuns],
+        hasMore: moreRuns.length >= _pageSize,
+      );
+    } catch (e) {
+      _logger.e('Failed to load more runs: $e');
+      state = state.copyWith(isLoading: false);
     }
   }
 

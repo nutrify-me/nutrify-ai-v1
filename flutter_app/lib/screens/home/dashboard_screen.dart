@@ -14,6 +14,9 @@ import '../../widgets/dashboard/workout_progress_card.dart';
 import '../../widgets/dashboard/water_intake_card.dart';
 import '../../widgets/streak_card.dart';
 import '../../providers/gamification_provider.dart';
+import '../../services/workout_cache_service.dart';
+import '../../providers/workout_session_provider.dart';
+import '../../providers/settings_provider.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -23,6 +26,8 @@ class DashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
+  int _weeklyCompletedWorkouts = 0;
+
   @override
   void initState() {
     super.initState();
@@ -34,7 +39,29 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
       // Refresh streak data to show updated streak after workouts
       ref.invalidate(streakProvider);
+
+      // Load weekly completed workouts from local cache
+      _loadWeeklyWorkouts();
     });
+  }
+
+  Future<void> _loadWeeklyWorkouts() async {
+    try {
+      final cache = WorkoutCacheService.instance;
+      final now = DateTime.now();
+      // Monday of this week
+      final monday = now.subtract(Duration(days: now.weekday - 1));
+      int count = 0;
+      for (int i = 0; i < 7; i++) {
+        final day = DateTime(monday.year, monday.month, monday.day + i);
+        if (day.isAfter(now)) break;
+        final workouts = await cache.getWorkoutsForDate(day);
+        count += workouts.length;
+      }
+      if (mounted) {
+        setState(() => _weeklyCompletedWorkouts = count);
+      }
+    } catch (_) {}
   }
 
   @override
@@ -45,33 +72,33 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final nutritionState = ref.watch(nutritionNotifierProvider);
     final fitnessState = ref.watch(fitnessNotifierProvider);
     final progressState = ref.watch(progressNotifierProvider);
-    
+
     final isLoading = nutritionState.isLoading || fitnessState.isLoading;
 
     // Get calorie target from AI-generated nutrition plan
-    final calorieTarget = nutritionState.currentPlan?.dailyCalories ?? 
+    final calorieTarget = nutritionState.currentPlan?.dailyCalories ??
                          (profile != null ? _calculateCalorieTarget(profile) : 2000);
-    
+
     // Calculate current calories from today's meals in the AI-generated plan
     final todayWeekday = DateTime.now().weekday;
     final todaysMeals = nutritionState.currentPlan?.meals.where(
       (meal) => _getDayNumber(meal.day) == todayWeekday,
     ).toList() ?? [];
-    
+
     final currentCalories = todaysMeals.fold<int>(0, (sum, dailyMeal) {
-      return sum + 
+      return sum +
              dailyMeal.breakfast.fold<int>(0, (s, m) => s + m.calories) +
              dailyMeal.lunch.fold<int>(0, (s, m) => s + m.calories) +
              dailyMeal.dinner.fold<int>(0, (s, m) => s + m.calories) +
              dailyMeal.snacks.fold<int>(0, (s, m) => s + m.calories);
     });
-    
+
     final calorieProgress = calorieTarget > 0 ? currentCalories / calorieTarget : 0.0;
-    
+
     // Get today's progress entry for water intake
     final today = DateTime.now().toIso8601String().split('T')[0];
     ProgressEntry? todayProgress;
-    
+
     try {
       todayProgress = progressState.entries.firstWhere(
         (entry) => entry.entryDate.startsWith(today),
@@ -80,14 +107,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       // No entry for today
       todayProgress = null;
     }
-    
+
     // Calculate water intake (convert ml to glasses, ~250ml per glass)
     final waterGlasses = (todayProgress?.waterIntakeMl ?? 0) ~/ 250;
     final waterTarget = 8; // Standard recommendation
-    
+
     // Calculate weekly workouts from fitness plan
     final weeklyWorkoutTarget = fitnessState.currentPlan?.workouts.length ?? 4;
-    final completedWorkouts = 0; // TODO: Get from workout logs
+    final completedWorkouts = _weeklyCompletedWorkouts;
 
     return Scaffold(
       body: LoadingOverlay(
@@ -133,7 +160,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 ),
               ],
             ),
-            
+
             // Content
             SliverPadding(
               padding: const EdgeInsets.all(16),
@@ -143,9 +170,33 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   StreakCard(
                     onTap: () => context.go('/achievements'),
                   ),
-                  
+
+                  // Restored workout session banner
+                  Builder(builder: (context) {
+                    final sessionState = ref.watch(workoutSessionProvider);
+                    if (!sessionState.hasActiveSession) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Card(
+                        color: Colors.orange.shade50,
+                        child: ListTile(
+                          leading: Icon(Icons.fitness_center, color: Colors.orange.shade700),
+                          title: Text(
+                            'Resume: ${sessionState.activeSession?.workoutName ?? "Workout"}',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          subtitle: Text('${(sessionState.elapsedSeconds ~/ 60)}min elapsed'),
+                          trailing: FilledButton(
+                            onPressed: () => context.go('/fitness'),
+                            child: const Text('Resume'),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+
                   const SizedBox(height: 24),
-                  
+
                   // Quick Stats Row
                   Row(
                     children: [
@@ -161,25 +212,32 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       ),
                     ],
                   ),
-                  
+
                   const SizedBox(height: 16),
-                  
+
                   // Water Intake Card - Quick tracking
                   const WaterIntakeCard(),
-                  
+
                   const SizedBox(height: 16),
-                  
+
                   Row(
                     children: [
                       Expanded(
-                        child: StatsCard(
-                          title: 'Current Weight',
-                          value: profile?.weight?.toStringAsFixed(1) ?? '--',
-                          target: profile != null ? 'kg' : '',
-                          progress: 0.0,
-                          color: Theme.of(context).colorScheme.secondary,
-                          icon: Icons.monitor_weight,
-                        ),
+                        child: Builder(builder: (context) {
+                          final settings = ref.watch(settingsProvider);
+                          final weightKg = profile?.weight;
+                          final displayWeight = weightKg != null
+                              ? settings.convertWeight(weightKg).toStringAsFixed(1)
+                              : '--';
+                          return StatsCard(
+                            title: 'Current Weight',
+                            value: displayWeight,
+                            target: settings.weightUnit,
+                            progress: 0.0,
+                            color: Theme.of(context).colorScheme.secondary,
+                            icon: Icons.monitor_weight,
+                          );
+                        }),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -194,9 +252,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       ),
                     ],
                   ),
-                  
+
                   const SizedBox(height: 24),
-                  
+
                   // Quick Actions
                   const QuickActions(),
 
@@ -225,9 +283,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                         : null,
                     onViewAll: () => context.go('/nutrition'),
                   ),
-                  
+
                   const SizedBox(height: 16),
-                  
+
                   // Workout Progress
                   WorkoutProgressCard(
                     workouts: fitnessState.currentPlan?.workouts
@@ -240,7 +298,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       context.go('/fitness');
                     },
                   ),
-                  
+
                   const SizedBox(height: 100), // Bottom padding for navigation
                 ]),
               ),
@@ -315,7 +373,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     if (goal == null) return 'your goals';
     return goal.split('_').map((word) => word[0].toUpperCase() + word.substring(1)).join(' ');
   }
-  
+
   int _getDayNumber(String day) {
     final dayLower = day.toLowerCase();
     switch (dayLower) {

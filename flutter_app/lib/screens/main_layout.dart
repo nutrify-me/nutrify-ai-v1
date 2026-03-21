@@ -1,15 +1,29 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../providers/sync_status_provider.dart';
 
-class MainLayout extends StatelessWidget {
+class MainLayout extends ConsumerWidget {
   final Widget child;
 
   const MainLayout({super.key, required this.child});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
-      body: child,
+      body: Column(
+        children: [
+          const SyncStatusBanner(),
+          Expanded(child: child),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => context.go('/ai-chat'),
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        child: const Icon(Icons.smart_toy, color: Colors.white),
+        tooltip: 'AI Coach',
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       bottomNavigationBar: _BottomNavigation(),
     );
   }

@@ -246,8 +246,14 @@ Key principles:
 - Include step-by-step cooking instructions that are easy to follow
 - Use commonly available ingredients from the user's region
 - Variety within the cuisine — different dishes each day but staying within the food culture
-- Include specific portion sizes and preparation methods
-- Provide accurate calorie and macro breakdowns per meal
+
+CRITICAL INGREDIENT RULES:
+- Every ingredient MUST have a weight in grams (e.g. "150g" not "1.5 cups", "15g" not "1 tbsp")
+- For liquids use ml (e.g. "10ml oil" not "1 tsp oil")
+- Be precise: "150g flattened rice" not "1 bowl poha"
+- The calorie and macro numbers MUST be calculated from the gram weights using standard nutrition data
+- Example: 150g cooked poha ≈ 165 kcal (110 kcal/100g × 1.5), 15g peanuts ≈ 85 kcal (567 kcal/100g × 0.15)
+- SUM the per-ingredient calories to get the meal total — do NOT estimate the total independently
 
 CRITICAL: You MUST respond with ONLY a valid JSON array, nothing else. No explanations, no code blocks, no markdown.
 
@@ -258,13 +264,13 @@ Return the meals as a JSON array. Each meal object must have these fields:
   "meal_order": 1,
   "name": "Poha with Peanuts and Lemon",
   "description": "Flattened rice stir-fried with onions, peanuts, turmeric, and lemon juice",
-  "calories": 320,
-  "protein_grams": 8.0,
-  "carbs_grams": 48.0,
-  "fat_grams": 10.0,
+  "calories": 312,
+  "protein_grams": 8.5,
+  "carbs_grams": 42.0,
+  "fat_grams": 12.0,
   "fiber_grams": 3.0,
-  "ingredients": {{"flattened_rice": "1.5 cups", "peanuts": "2 tbsp", "onion": "1 medium", "turmeric": "0.5 tsp", "lemon": "1"}},
-  "instructions": "1. Rinse poha in water and drain. 2. Heat oil, add mustard seeds and curry leaves. 3. Add chopped onion, green chili, sauté until soft. 4. Add turmeric, salt, peanuts. 5. Add poha, mix gently, cook 2 min. 6. Squeeze lemon juice, garnish with coriander.",
+  "ingredients": {{"flattened_rice": "150g", "peanuts": "15g", "onion": "80g", "oil": "10ml", "turmeric": "2g", "lemon_juice": "15ml"}},
+  "instructions": "1. Rinse 150g poha in water and drain. 2. Heat 10ml oil, add mustard seeds and curry leaves. 3. Add 80g chopped onion, 1 green chili, sauté until soft. 4. Add 2g turmeric, salt, 15g roasted peanuts. 5. Add poha, mix gently, cook 2 min. 6. Squeeze 15ml lemon juice, garnish with coriander.",
   "prep_time_minutes": 5,
   "cook_time_minutes": 10,
   "cuisine_type": "Indian",
@@ -337,9 +343,12 @@ USER PROFILE:
         prompt += f"""IMPORTANT:
 - Generate exactly {meals_per_day * 7} meals ({meals_per_day} per day x 7 days)
 - All meals should be simple HOME-COOKED food from the user's region
-- Include step-by-step cooking instructions for each meal
+- Include step-by-step cooking instructions with GRAM WEIGHTS in each step
+- Every ingredient MUST be listed with weight in grams (or ml for liquids)
+- Calculate each meal's calories by summing per-ingredient calories (weight × kcal/100g)
 - Different dishes each day but staying true to the food culture
 - Vary proteins and preparations throughout the week
+- DAILY MEAL TOTALS MUST sum to approximately {targets['daily_calories']} kcal
 
 """
 
@@ -367,7 +376,7 @@ USER PROFILE:
         response: str,
         targets: Dict[str, int]
     ) -> List[Meal]:
-        """Parse AI response into Meal objects"""
+        """Parse AI response into Meal objects, then validate calories against food DB"""
         import json
         import logging
 
@@ -419,8 +428,30 @@ USER PROFILE:
             logger.error(f"Original response (first 500 chars): {response[:500]}")
             return self._generate_fallback_meals(targets)
 
-        meals = []
+        # ── Validate each meal against the food DB ──
+        validated_data = []
         for meal_data in meals_data:
+            corrected = self.nutrition_db.validate_meal(meal_data)
+            validated_data.append(corrected)
+
+        # ── Validate per-day totals and scale to hit target ──
+        from itertools import groupby
+        sorted_meals = sorted(validated_data, key=lambda m: m.get("day", 0))
+        final_data = []
+        for day, day_meals_iter in groupby(sorted_meals, key=lambda m: m.get("day", 0)):
+            day_meals = list(day_meals_iter)
+            adjusted = self.nutrition_db.validate_day_meals(day_meals, targets["daily_calories"])
+            final_data.extend(adjusted)
+
+        corrected_count = sum(1 for m in final_data if m.get("_nutrition_source") == "db_corrected")
+        scaled_count = sum(1 for m in final_data if m.get("_scaled"))
+        logger.info(
+            f"Nutrition validation: {corrected_count}/{len(final_data)} meals corrected by DB, "
+            f"{scaled_count} meals scaled to hit daily target"
+        )
+
+        meals = []
+        for meal_data in final_data:
             meal = Meal(
                 day_of_week=meal_data.get("day", 0),
                 meal_type=meal_data.get("meal_type", "breakfast"),

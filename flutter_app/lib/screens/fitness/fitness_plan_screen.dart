@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../providers/fitness_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/generation_provider.dart' show generationNotifierProvider, GenerationState, GenerationTaskState;
@@ -246,6 +247,11 @@ class _FitnessPlanScreenState extends ConsumerState<FitnessPlanScreen> with Widg
           //     onPressed: fitnessState.isLoading ? null : () => _showRegenerateDialog(context, ref),
           //     tooltip: 'Regenerate Plan',
           //   ),
+          IconButton(
+            icon: const Icon(Icons.show_chart),
+            tooltip: 'Exercise Progress',
+            onPressed: () => context.push('/exercise-progress'),
+          ),
           IconButton(
             icon: const Icon(Icons.history),
             onPressed: () {
@@ -1407,7 +1413,7 @@ class _FitnessPlanScreenState extends ConsumerState<FitnessPlanScreen> with Widg
             // Questionnaire completed - show success message
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('Fitness profile saved! AI plan generation coming soon.'),
+                content: Text('Fitness profile saved! Generating your plan...'),
                 behavior: SnackBarBehavior.floating,
               ),
             );

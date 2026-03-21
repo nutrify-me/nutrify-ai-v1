@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/run_tracking_provider.dart';
 import 'run_tracking_screen.dart';
+import 'run_detail_screen.dart';
 
 /// Displays run history and stats — entry point for the running feature
 class RunHistoryScreen extends ConsumerStatefulWidget {
@@ -275,7 +276,9 @@ class _RunHistoryScreenState extends ConsumerState<RunHistoryScreen> {
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () {
-          // TODO: Navigate to run detail screen
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => RunDetailScreen(run: run)),
+          );
         },
         child: Padding(
           padding: const EdgeInsets.all(16),

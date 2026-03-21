@@ -13,22 +13,26 @@ class ProgressState {
   final bool isLoading;
   final List<ProgressEntry> entries;
   final String? error;
+  final bool hasMore;
 
   const ProgressState({
     this.isLoading = false,
     this.entries = const [],
     this.error,
+    this.hasMore = true,
   });
 
   ProgressState copyWith({
     bool? isLoading,
     List<ProgressEntry>? entries,
     String? error,
+    bool? hasMore,
   }) {
     return ProgressState(
       isLoading: isLoading ?? this.isLoading,
       entries: entries ?? this.entries,
       error: error,
+      hasMore: hasMore ?? this.hasMore,
     );
   }
 }
@@ -37,6 +41,8 @@ class ProgressState {
 class ProgressNotifier extends StateNotifier<ProgressState> {
   final ApiService _apiService;
   static const _cacheKey = 'progress_entries';
+
+  static const int _pageSize = 30;
 
   ProgressNotifier(this._apiService) : super(const ProgressState());
 
@@ -65,7 +71,7 @@ class ProgressNotifier extends StateNotifier<ProgressState> {
 
   Future<void> _refreshFromServer() async {
     try {
-      final entries = await _apiService.getProgressEntries();
+      final entries = await _apiService.getProgressEntries(limit: _pageSize);
       // Update cache
       await CacheService.instance.set(
         _cacheKey,
@@ -73,7 +79,11 @@ class ProgressNotifier extends StateNotifier<ProgressState> {
       );
       // Only update state if data actually changed
       if (!_entriesMatch(state.entries, entries)) {
-        state = state.copyWith(isLoading: false, entries: entries);
+        state = state.copyWith(
+          isLoading: false,
+          entries: entries,
+          hasMore: entries.length >= _pageSize,
+        );
       } else {
         state = state.copyWith(isLoading: false);
       }
@@ -85,6 +95,25 @@ class ProgressNotifier extends StateNotifier<ProgressState> {
       } else {
         state = state.copyWith(isLoading: false, error: e.toString());
       }
+    }
+  }
+
+  Future<void> loadMoreEntries() async {
+    if (state.isLoading || !state.hasMore) return;
+    state = state.copyWith(isLoading: true);
+    try {
+      final newEntries = await _apiService.getProgressEntries(
+        limit: _pageSize + state.entries.length,
+      );
+      final merged = newEntries;
+      merged.sort((a, b) => b.entryDate.compareTo(a.entryDate));
+      state = state.copyWith(
+        isLoading: false,
+        entries: merged,
+        hasMore: newEntries.length > state.entries.length,
+      );
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
 

@@ -158,21 +158,9 @@ class _NutritionPlanScreenState extends ConsumerState<NutritionPlanScreen> {
           IconButton(
             icon: const Icon(Icons.camera_alt),
             onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Row(
-                    children: [
-                      Icon(Icons.info_outline, color: Colors.white),
-                      SizedBox(width: 12),
-                      Text('Food Scanner - Coming Soon!'),
-                    ],
-                  ),
-                  backgroundColor: Colors.blue,
-                  duration: Duration(seconds: 2),
-                ),
-              );
+              context.push('/food-scanner');
             },
-            tooltip: 'Scan Food (Coming Soon)',
+            tooltip: 'Scan Food',
           ),
           // Regenerate button - always visible so users can redo plan
           IconButton(
@@ -378,9 +366,7 @@ class _NutritionPlanScreenState extends ConsumerState<NutritionPlanScreen> {
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          // TODO: Add meal logging
-        },
+        onPressed: () => _showQuickMealLogDialog(context),
         child: const Icon(Icons.add),
       ),
     );
@@ -799,7 +785,7 @@ class _NutritionPlanScreenState extends ConsumerState<NutritionPlanScreen> {
             // Questionnaire completed - show success message
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('Nutrition profile saved! AI meal planning coming soon.'),
+                content: Text('Nutrition profile saved! Generating your plan...'),
                 behavior: SnackBarBehavior.floating,
               ),
             );
@@ -825,6 +811,103 @@ class _NutritionPlanScreenState extends ConsumerState<NutritionPlanScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  void _showQuickMealLogDialog(BuildContext context) {
+    final caloriesController = TextEditingController();
+    final nameController = TextEditingController();
+    String selectedMealType = 'snack';
+    final mealTypes = ['breakfast', 'lunch', 'dinner', 'snack'];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Padding(
+          padding: EdgeInsets.only(
+            left: 16, right: 16, top: 16,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                    color: Theme.of(ctx).colorScheme.outline,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text('Quick Meal Log', style: Theme.of(ctx).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: 'What did you eat?', border: OutlineInputBorder()),
+                textCapitalization: TextCapitalization.sentences,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: caloriesController,
+                decoration: const InputDecoration(labelText: 'Estimated calories', border: OutlineInputBorder()),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                children: mealTypes.map((type) => ChoiceChip(
+                  label: Text(type[0].toUpperCase() + type.substring(1)),
+                  selected: selectedMealType == type,
+                  onSelected: (sel) => setModalState(() => selectedMealType = type),
+                )).toList(),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        context.push('/food-scanner');
+                      },
+                      icon: const Icon(Icons.camera_alt),
+                      label: const Text('Scan Instead'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () async {
+                        if (nameController.text.trim().isEmpty) return;
+                        Navigator.pop(ctx);
+                        final today = DateTime.now().toIso8601String().split('T')[0];
+                        final calories = int.tryParse(caloriesController.text) ?? 0;
+                        final success = await ref.read(nutritionNotifierProvider.notifier).logMeal(
+                          mealDate: today,
+                          mealType: selectedMealType,
+                          customMealName: nameController.text.trim(),
+                          calories: calories,
+                        );
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(success ? 'Logged: ${nameController.text.trim()}' : 'Failed to log meal'),
+                          backgroundColor: success ? Colors.green : Colors.red,
+                        ));
+                      },
+                      icon: const Icon(Icons.check),
+                      label: const Text('Log Meal'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

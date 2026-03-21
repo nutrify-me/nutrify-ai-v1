@@ -1,4 +1,6 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/workout_session.dart';
 import '../../models/gamification.dart';
@@ -457,14 +459,7 @@ class _WorkoutSummaryScreenState extends ConsumerState<WorkoutSummaryScreen> {
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  onPressed: () {
-                    // TODO: Implement share functionality
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Sharing coming soon!'),
-                      ),
-                    );
-                  },
+                  onPressed: () => _showShareCard(context),
                   icon: const Icon(Icons.share),
                   label: const Text('Share Workout'),
                   style: OutlinedButton.styleFrom(
@@ -552,5 +547,119 @@ class _WorkoutSummaryScreenState extends ConsumerState<WorkoutSummaryScreen> {
     final hour = time.hour.toString().padLeft(2, '0');
     final minute = time.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
+  }
+
+  void _showShareCard(BuildContext context) {
+    final summary = widget.summary;
+    final duration = Duration(seconds: summary.durationSeconds);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Shareable card preview
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Theme.of(context).colorScheme.primary,
+                      Theme.of(context).colorScheme.primary.withOpacity(0.7),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.fitness_center, color: Colors.white, size: 24),
+                        const SizedBox(width: 8),
+                        const Text('Nutrify', style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600)),
+                        const Spacer(),
+                        Text(
+                          '${summary.startedAt.day}/${summary.startedAt.month}/${summary.startedAt.year}',
+                          style: const TextStyle(color: Colors.white60, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      summary.workoutName,
+                      style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _shareStatCol('Duration', _formatDuration(duration)),
+                        _shareStatCol('Volume', '${summary.totalVolume} kg'),
+                        _shareStatCol('Sets', '${summary.totalSets}'),
+                        _shareStatCol('Exercises', '${summary.exercisesCompleted}'),
+                      ],
+                    ),
+                    if (summary.newPRs.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          const Icon(Icons.emoji_events, color: Colors.amber, size: 18),
+                          const SizedBox(width: 6),
+                          Text(
+                            '${summary.newPRs.length} New PR${summary.newPRs.length > 1 ? 's' : ''}!',
+                            style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // Copy summary text
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () {
+                    final text = '${summary.workoutName}\n'
+                        'Duration: ${_formatDuration(duration)}\n'
+                        'Volume: ${summary.totalVolume} kg\n'
+                        'Sets: ${summary.totalSets} | Exercises: ${summary.exercisesCompleted}\n'
+                        '${summary.newPRs.isNotEmpty ? '${summary.newPRs.length} New PRs! ' : ''}'
+                        '#Nutrify #Workout';
+                    // Copy to clipboard
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      const SnackBar(content: Text('Workout summary copied to clipboard!'), backgroundColor: Colors.green),
+                    );
+                    Navigator.pop(ctx);
+                  },
+                  icon: const Icon(Icons.copy),
+                  label: const Text('Copy Summary'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _shareStatCol(String label, String value) {
+    return Column(
+      children: [
+        Text(value, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 2),
+        Text(label, style: const TextStyle(color: Colors.white60, fontSize: 11)),
+      ],
+    );
   }
 }
