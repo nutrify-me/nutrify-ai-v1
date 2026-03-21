@@ -6,6 +6,7 @@ import '../services/data_repository.dart';
 import '../services/offline_mutation_queue.dart';
 import '../services/cache_service.dart';
 import '../services/local_database.dart';
+import '../services/notification_service.dart';
 import 'nutrition_provider.dart';
 import 'fitness_provider.dart';
 
@@ -121,8 +122,14 @@ class AuthNotifier extends Notifier<AuthState> {
       }
     } catch (e) {
       // Failed to get user - token might be invalid
+      final errorMsg = e.toString();
+      final isTokenExpired = errorMsg.contains('refresh failed') ||
+          errorMsg.contains('log in again') ||
+          errorMsg.contains('401');
       state = state.copyWith(
-        error: e.toString(),
+        error: isTokenExpired
+            ? 'Your session has expired. Please log in again.'
+            : errorMsg,
         isLoading: false,
         status: AuthStatus.unauthenticated,
       );
@@ -145,6 +152,9 @@ class AuthNotifier extends Notifier<AuthState> {
 
         // 4. Start periodic sync
         SyncService().initialize();
+
+        // 5. Initialize push notifications
+        await NotificationService().initialize();
       } catch (e) {
         // Non-fatal — app works without warm cache
       }

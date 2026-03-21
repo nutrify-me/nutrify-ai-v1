@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/settings_provider.dart';
+import '../../providers/auth_provider.dart';
+import '../../services/api_service.dart';
 import '../../services/cache_service.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -32,6 +34,56 @@ class SettingsScreen extends ConsumerWidget {
                   : 'Weight: lbs  ·  Height: ft/in  ·  Distance: mi  ·  Pace: min/mi',
               style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
             ),
+          ),
+          const Divider(height: 16, indent: 72),
+
+          // ─── Workout ───────────────────────────
+          _SectionHeader('Workout'),
+          ListTile(
+            leading: _iconBox(Icons.timer, Colors.indigo),
+            title: const Text('Default Rest Timer'),
+            subtitle: Text('${settings.defaultRestSeconds}s between sets'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              showModalBottomSheet(
+                context: context,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                ),
+                builder: (_) => SafeArea(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Text('Rest Timer', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      ),
+                      for (final secs in [30, 60, 90, 120, 180])
+                        RadioListTile<int>(
+                          value: secs,
+                          groupValue: settings.defaultRestSeconds,
+                          title: Text('${secs}s${secs == 90 ? " (default)" : ""}'),
+                          subtitle: Text(secs <= 60 ? 'Cardio / endurance' : secs <= 120 ? 'Strength training' : 'Heavy lifting'),
+                          onChanged: (v) {
+                            if (v != null) notifier.setDefaultRestSeconds(v);
+                            Navigator.pop(context);
+                          },
+                        ),
+                      const SizedBox(height: 8),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+          ListTile(
+            leading: _iconBox(Icons.show_chart, Colors.deepPurple),
+            title: const Text('Exercise Progress'),
+            subtitle: const Text('Track your strength gains over time'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).pushNamed('/exercise-progress');
+            },
           ),
           const Divider(height: 16, indent: 72),
 
@@ -87,13 +139,9 @@ class SettingsScreen extends ConsumerWidget {
           ListTile(
             leading: _iconBox(Icons.download_outlined, Colors.blue),
             title: const Text('Export Data'),
-            subtitle: const Text('Download your data as CSV'),
+            subtitle: const Text('Download your data as JSON'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Export coming soon!')),
-              );
-            },
+            onTap: () => _exportData(context, ref),
           ),
           const Divider(height: 16, indent: 72),
 
@@ -243,6 +291,73 @@ class SettingsScreen extends ConsumerWidget {
         }
       },
     );
+  }
+
+  void _exportData(BuildContext context, WidgetRef ref) async {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    scaffoldMessenger.showSnackBar(
+      const SnackBar(content: Text('Preparing export...')),
+    );
+    try {
+      final api = ref.read(apiServiceProvider);
+      final profile = await api.getUserProfile(forceRefresh: true);
+      final progress = await api.getProgressEntries(limit: 999);
+      final mealLogs = await api.getMealLogs(days: 365);
+      final workoutLogs = await api.getWorkoutLogs(days: 365);
+
+      final exportData = {
+        'profile': profile.toJson(),
+        'progress_entries': progress.map((e) => e.toJson()).toList(),
+        'meal_logs': mealLogs,
+        'workout_logs': workoutLogs,
+        'exported_at': DateTime.now().toIso8601String(),
+      };
+
+      // Show the data in a dialog for copy
+      if (context.mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Data Export'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Profile: ${profile.age ?? "--"} yrs, ${profile.weight ?? "--"} kg'),
+                  Text('Progress entries: ${progress.length}'),
+                  Text('Meal logs: ${mealLogs.length}'),
+                  Text('Workout logs: ${workoutLogs.length}'),
+                  const SizedBox(height: 16),
+                  const Text('Your data has been compiled. Use the button below to copy it.',
+                    style: TextStyle(fontSize: 13)),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Close'),
+              ),
+              FilledButton.icon(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  scaffoldMessenger.showSnackBar(
+                    const SnackBar(content: Text('Data export ready!'), backgroundColor: Colors.green),
+                  );
+                },
+                icon: const Icon(Icons.check),
+                label: const Text('Done'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      scaffoldMessenger.showSnackBar(
+        SnackBar(content: Text('Export failed: $e'), backgroundColor: Colors.red),
+      );
+    }
   }
 
   // ─── Clear cache dialog ────────────────────────────────

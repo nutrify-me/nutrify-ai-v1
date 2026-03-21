@@ -224,16 +224,18 @@ IMPORTANT: You have access to their actual progress data above. Use it to make y
             entry_str = f"- {entry.entry_date.strftime('%Y-%m-%d')}: "
             details = []
 
-            if entry.current_weight:
-                details.append(f"Weight {entry.current_weight}kg")
-            if entry.calories_consumed:
-                details.append(f"{entry.calories_consumed} calories")
-            if entry.workouts_completed:
-                details.append(f"{entry.workouts_completed} workouts")
+            if entry.weight:
+                details.append(f"Weight {entry.weight}kg")
             if entry.mood_score:
                 details.append(f"Mood {entry.mood_score}/10")
             if entry.energy_score:
                 details.append(f"Energy {entry.energy_score}/10")
+            if entry.stress_score:
+                details.append(f"Stress {entry.stress_score}/10")
+            if entry.sleep_hours:
+                details.append(f"Sleep {entry.sleep_hours}h")
+            if entry.water_intake_ml:
+                details.append(f"Water {entry.water_intake_ml}ml")
             if entry.notes:
                 details.append(f"Notes: {entry.notes}")
 
@@ -277,10 +279,11 @@ WEEKLY PROGRESS DATA:
 
         for entry in progress_entries:
             prompt += f"""
-- Date: {entry.date.strftime('%Y-%m-%d')}
-  Weight: {entry.current_weight or 'N/A'} kg
-  Calories Consumed: {entry.calories_consumed or 0}
-  Workouts Completed: {entry.workouts_completed or 0}
+- Date: {entry.entry_date.strftime('%Y-%m-%d')}
+  Weight: {entry.weight or 'N/A'} kg
+  Mood: {entry.mood_score or 'N/A'}/10
+  Energy: {entry.energy_score or 'N/A'}/10
+  Sleep: {entry.sleep_hours or 'N/A'}h
   Notes: {entry.notes or 'None'}
 """
 

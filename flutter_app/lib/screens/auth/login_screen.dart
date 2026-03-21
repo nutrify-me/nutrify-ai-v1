@@ -47,7 +47,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authNotifierProvider);
-    
+
     return Scaffold(
       resizeToAvoidBottomInset: true,
       body: LoadingOverlay(
@@ -96,9 +96,33 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       ),
                     ],
                   ),
-                  
+
                   const SizedBox(height: 48),
-                  
+
+                  // Session expired message
+                  if (authState.error != null && authState.error!.contains('session'))
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.orange.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline, color: Colors.orange.shade700, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              authState.error!,
+                              style: TextStyle(color: Colors.orange.shade900, fontSize: 13),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
                   // Email Field
                   TextFormField(
                     controller: _emailController,
@@ -118,9 +142,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       return null;
                     },
                   ),
-                  
+
                   const SizedBox(height: 16),
-                  
+
                   // Password Field
                   TextFormField(
                     controller: _passwordController,
@@ -145,17 +169,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       return null;
                     },
                   ),
-                  
+
                   const SizedBox(height: 24),
-                  
+
                   // Login Button
                   ElevatedButton(
                     onPressed: authState.isLoading ? null : _handleLogin,
                     child: const Text('Sign In'),
                   ),
-                  
+
                   const SizedBox(height: 16),
-                  
+
                   // Divider
                   Row(
                     children: [
@@ -172,9 +196,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       Expanded(child: Divider(color: Theme.of(context).colorScheme.outline)),
                     ],
                   ),
-                  
+
                   const SizedBox(height: 16),
-                  
+
                   // Google Sign In Button
                   OutlinedButton.icon(
                     onPressed: authState.isLoading ? null : () async {
@@ -194,9 +218,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     icon: const Icon(Icons.g_mobiledata),
                     label: const Text('Continue with Google'),
                   ),
-                  
+
                   const SizedBox(height: 32),
-                  
+
                   // Sign Up Link
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,

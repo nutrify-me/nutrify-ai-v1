@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../services/api_service.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/nutrition_provider.dart';
 
 class FoodScannerScreen extends ConsumerStatefulWidget {
   const FoodScannerScreen({Key? key}) : super(key: key);
@@ -73,17 +74,52 @@ class _FoodScannerScreenState extends ConsumerState<FoodScannerScreen> {
 
     final foods = _analysisResult!['foods'] as List;
     final mealType = _analysisResult!['meal_type_suggestion'] ?? 'snack';
+    final totalCalories = (_analysisResult!['total_calories'] as num?)?.toInt() ?? 0;
 
-    // TODO: Implement actual meal logging
-    // For now, just show a confirmation
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Logged ${foods.length} food items as $mealType'),
-        backgroundColor: Colors.green,
-      ),
-    );
+    // Sum up macros from all detected foods
+    double totalProtein = 0, totalCarbs = 0, totalFat = 0;
+    for (final food in foods) {
+      totalProtein += ((food['protein_g'] ?? food['protein'] ?? 0) as num).toDouble();
+      totalCarbs += ((food['carbs_g'] ?? food['carbs'] ?? 0) as num).toDouble();
+      totalFat += ((food['fat_g'] ?? food['fat'] ?? 0) as num).toDouble();
+    }
 
-    Navigator.pop(context);
+    final today = DateTime.now().toIso8601String().split('T')[0];
+    final foodNames = foods.map((f) => f['name'] ?? 'Unknown').join(', ');
+
+    setState(() => _isAnalyzing = true);
+
+    try {
+      final success = await ref.read(nutritionNotifierProvider.notifier).logMeal(
+        mealDate: today,
+        mealType: mealType.toString().toLowerCase(),
+        customMealName: foodNames,
+        calories: totalCalories,
+        proteinGrams: totalProtein,
+        carbsGrams: totalCarbs,
+        fatGrams: totalFat,
+      );
+
+      if (!mounted) return;
+      setState(() => _isAnalyzing = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(success
+              ? 'Logged ${foods.length} food item(s) as $mealType ($totalCalories kcal)'
+              : 'Failed to log meal. Please try again.'),
+          backgroundColor: success ? Colors.green : Colors.red,
+        ),
+      );
+
+      if (success) Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isAnalyzing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to log meal: $e'), backgroundColor: Colors.red),
+      );
+    }
   }
 
   @override

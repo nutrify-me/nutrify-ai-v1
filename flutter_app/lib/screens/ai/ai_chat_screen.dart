@@ -1,53 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/ai.dart';
-
-// Temporary placeholder provider until ai_provider is implemented
-final aiNotifierProvider = StateNotifierProvider<AiNotifier, AiState>((ref) {
-  return AiNotifier();
-});
-
-class AiState {
-  final List<ChatMessage> chatHistory;
-  final bool isLoading;
-  final String? error;
-
-  const AiState({
-    this.chatHistory = const [],
-    this.isLoading = false,
-    this.error,
-  });
-
-  AiState copyWith({
-    List<ChatMessage>? chatHistory,
-    bool? isLoading,
-    String? error,
-  }) {
-    return AiState(
-      chatHistory: chatHistory ?? this.chatHistory,
-      isLoading: isLoading ?? this.isLoading,
-      error: error,
-    );
-  }
-}
-
-class AiNotifier extends StateNotifier<AiState> {
-  AiNotifier() : super(const AiState());
-
-  Future<void> loadChatHistory() async {
-    // TODO: Implement API call
-    state = state.copyWith(isLoading: false);
-  }
-
-  Future<void> sendMessage(String message) async {
-    // TODO: Implement API call
-    state = state.copyWith(isLoading: false);
-  }
-
-  void clearError() {
-    state = state.copyWith(error: null);
-  }
-}
+import '../../providers/ai_provider.dart';
 
 class AiChatScreen extends ConsumerStatefulWidget {
   const AiChatScreen({super.key});
@@ -65,7 +19,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
     super.initState();
     // Load chat history when screen loads
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(aiNotifierProvider.notifier).loadChatHistory();
+      ref.read(aiChatNotifierProvider.notifier).loadChatHistory();
     });
   }
 
@@ -94,7 +48,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
     });
 
     // Send message to AI via provider
-    await ref.read(aiNotifierProvider.notifier).sendMessage(messageText);
+    await ref.read(aiChatNotifierProvider.notifier).sendMessage(messageText);
 
     // Scroll to bottom again after response
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -110,8 +64,8 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final aiState = ref.watch(aiNotifierProvider);
-    final messages = aiState.chatHistory;
+    final aiState = ref.watch(aiChatNotifierProvider);
+    final messages = aiState.messages;
     final isLoading = aiState.isLoading;
 
     return Scaffold(
@@ -122,7 +76,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () {
-              ref.read(aiNotifierProvider.notifier).loadChatHistory();
+              ref.read(aiChatNotifierProvider.notifier).loadChatHistory();
             },
           ),
           IconButton(
@@ -163,7 +117,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
                 ],
               ),
             ),
-          
+
           // Chat Messages
           Expanded(
             child: messages.isEmpty
@@ -206,7 +160,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
                     },
                   ),
           ),
-          
+
           // Error message
           if (aiState.error != null)
             Container(
@@ -231,13 +185,13 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
                   IconButton(
                     icon: const Icon(Icons.close, size: 20),
                     onPressed: () {
-                      ref.read(aiNotifierProvider.notifier).clearError();
+                      ref.read(aiChatNotifierProvider.notifier).clearError();
                     },
                   ),
                 ],
               ),
             ),
-          
+
           // Message Input
           Container(
             padding: const EdgeInsets.all(16),
@@ -380,7 +334,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
       ),
     );
   }
-  
+
   Widget _buildLoadingBubble() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -440,7 +394,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
   String _formatTime(DateTime dateTime) {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
-    
+
     if (difference.inMinutes < 1) {
       return 'Just now';
     } else if (difference.inMinutes < 60) {

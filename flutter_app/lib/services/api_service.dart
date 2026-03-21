@@ -742,6 +742,8 @@ class ApiService {
       'POST',
       '/nutrition/generate-async',
     );
+    // Invalidate cached plan so completion refresh gets fresh data
+    requestCache.invalidate(_getUserCacheKey('nutrition_plan_current'));
     return response;
   }
 

@@ -5,13 +5,68 @@ import '../../providers/auth_provider.dart';
 import '../../providers/progress_provider.dart';
 import '../../providers/gamification_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../providers/fitness_provider.dart';
+import '../../providers/nutrition_provider.dart';
+import '../../services/workout_cache_service.dart';
 import '../../widgets/streak_card.dart';
 
-class ProfileScreen extends ConsumerWidget {
+class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends ConsumerState<ProfileScreen> {
+  int _goalsMetCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _calculateGoalsMet());
+  }
+
+  Future<void> _calculateGoalsMet() async {
+    int met = 0;
+    try {
+      // Goal 1: Hit workout target this week
+      final cache = WorkoutCacheService.instance;
+      final now = DateTime.now();
+      final monday = now.subtract(Duration(days: now.weekday - 1));
+      int weeklyWorkouts = 0;
+      for (int i = 0; i < 7; i++) {
+        final day = DateTime(monday.year, monday.month, monday.day + i);
+        if (day.isAfter(now)) break;
+        weeklyWorkouts += (await cache.getWorkoutsForDate(day)).length;
+      }
+      final fitnessState = ref.read(fitnessNotifierProvider);
+      final weeklyTarget = fitnessState.currentPlan?.workouts.length ?? 4;
+      if (weeklyWorkouts >= weeklyTarget && weeklyTarget > 0) met++;
+
+      // Goal 2: Has an active nutrition plan
+      final nutritionState = ref.read(nutritionNotifierProvider);
+      if (nutritionState.currentPlan != null) met++;
+
+      // Goal 3: Logged progress this week
+      final progressState = ref.read(progressNotifierProvider);
+      final mondayStr = DateTime(monday.year, monday.month, monday.day).toIso8601String().split('T')[0];
+      final hasRecentProgress = progressState.entries.any(
+        (e) => e.entryDate.compareTo(mondayStr) >= 0,
+      );
+      if (hasRecentProgress) met++;
+
+      // Goal 4: Maintained streak (at least 2 days)
+      final streakAsync = ref.read(streakProvider);
+      streakAsync.whenData((streak) {
+        if (streak != null && streak.currentStreak >= 2) met++;
+      });
+    } catch (_) {}
+
+    if (mounted) setState(() => _goalsMetCount = met);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final authState = ref.watch(authNotifierProvider);
     final user = authState.user;
     final profile = authState.profile;
@@ -20,7 +75,7 @@ class ProfileScreen extends ConsumerWidget {
 
     // Calculate stats from progress entries
     final daysActive = progressState.entries.length;
-    final goalsMetCount = 0; // TODO: Calculate from actual goals completion
+    final goalsMetCount = _goalsMetCount;
 
     return Scaffold(
       appBar: AppBar(
@@ -33,7 +88,7 @@ class ProfileScreen extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.edit),
             onPressed: () {
-              // TODO: Edit profile
+              context.push('/edit-profile');
             },
           ),
         ],
@@ -194,7 +249,7 @@ class ProfileScreen extends ConsumerWidget {
                 'Update your profile details',
                 Icons.person_outline,
                 onTap: () {
-                  // TODO: Navigate to personal info
+                  context.push('/edit-profile');
                 },
               ),
               const Divider(height: 1),
@@ -204,7 +259,7 @@ class ProfileScreen extends ConsumerWidget {
                 'Fitness and nutrition goals',
                 Icons.track_changes,
                 onTap: () {
-                  // TODO: Navigate to goals
+                  context.push('/edit-profile');
                 },
               ),
               const Divider(height: 1),

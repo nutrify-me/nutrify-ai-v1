@@ -8,6 +8,8 @@ import '../../providers/generation_provider.dart';
 import '../../models/progress.dart';
 import '../../models/nutrition.dart';
 import '../../widgets/common/loading_overlay.dart';
+import '../../services/api_service.dart';
+import '../../services/request_cache_service.dart';
 import 'nutrition_questionnaire_screen.dart';
 
 class NutritionPlanScreen extends ConsumerStatefulWidget {
@@ -30,7 +32,8 @@ class _NutritionPlanScreenState extends ConsumerState<NutritionPlanScreen> {
       // Setup generation completion callbacks
       final generationNotifier = ref.read(generationNotifierProvider.notifier);
       generationNotifier.onNutritionComplete = (resultId) {
-        // Refresh the nutrition plan when generation completes
+        // Invalidate API cache and force reload from server
+        requestCache.invalidate('nutrition_plan_current');
         ref.read(nutritionNotifierProvider.notifier).loadCurrentPlan(forceRefresh: true);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -77,7 +80,7 @@ class _NutritionPlanScreenState extends ConsumerState<NutritionPlanScreen> {
     final currentPlan = nutritionState.currentPlan;
     final nutritionTask = generationState.nutritionTask;
     final isGenerating = nutritionTask?.isActive ?? false;
-    
+
     // Get daily targets from AI-generated nutrition plan
     final calorieTarget = currentPlan?.dailyCalories ?? _calculateCalorieTarget(profile);
     // Backend returns 'protein', 'carbs', 'fat' (not with _grams suffix)
@@ -87,7 +90,7 @@ class _NutritionPlanScreenState extends ConsumerState<NutritionPlanScreen> {
                        (calorieTarget * 0.4 / 4).round();
     final fatTarget = (currentPlan?.macros['fat'] as num?)?.toInt() ??
                      (calorieTarget * 0.3 / 9).round();
-    
+
     // Get selected day's meals from the plan
     DailyMeal? selectedDayMeals;
     if (currentPlan?.meals != null && currentPlan!.meals.isNotEmpty) {
@@ -99,11 +102,11 @@ class _NutritionPlanScreenState extends ConsumerState<NutritionPlanScreen> {
         selectedDayMeals = currentPlan.meals.first;
       }
     }
-    
+
     // Get today's progress for consumed values
     final todayDate = DateTime.now().toIso8601String().split('T')[0];
     ProgressEntry? todayProgress;
-    
+
     try {
       todayProgress = progressState.entries.firstWhere(
         (entry) => entry.entryDate.startsWith(todayDate),
@@ -112,7 +115,7 @@ class _NutritionPlanScreenState extends ConsumerState<NutritionPlanScreen> {
       // No entry for today
       todayProgress = null;
     }
-    
+
     // Calculate consumed values from today's meals in the AI-generated plan
     // These represent the planned intake for today
     final consumedCalories = selectedDayMeals != null ? (
@@ -121,21 +124,21 @@ class _NutritionPlanScreenState extends ConsumerState<NutritionPlanScreen> {
       selectedDayMeals.dinner.fold<int>(0, (sum, meal) => sum + meal.calories) +
       selectedDayMeals.snacks.fold<int>(0, (sum, meal) => sum + meal.calories)
     ) : 0;
-    
+
     final consumedProtein = selectedDayMeals != null ? (
       selectedDayMeals.breakfast.fold<double>(0, (sum, meal) => sum + meal.proteinGrams) +
       selectedDayMeals.lunch.fold<double>(0, (sum, meal) => sum + meal.proteinGrams) +
       selectedDayMeals.dinner.fold<double>(0, (sum, meal) => sum + meal.proteinGrams) +
       selectedDayMeals.snacks.fold<double>(0, (sum, meal) => sum + meal.proteinGrams)
     ).toInt() : 0;
-    
+
     final consumedCarbs = selectedDayMeals != null ? (
       selectedDayMeals.breakfast.fold<double>(0, (sum, meal) => sum + meal.carbsGrams) +
       selectedDayMeals.lunch.fold<double>(0, (sum, meal) => sum + meal.carbsGrams) +
       selectedDayMeals.dinner.fold<double>(0, (sum, meal) => sum + meal.carbsGrams) +
       selectedDayMeals.snacks.fold<double>(0, (sum, meal) => sum + meal.carbsGrams)
     ).toInt() : 0;
-    
+
     final consumedFat = selectedDayMeals != null ? (
       selectedDayMeals.breakfast.fold<double>(0, (sum, meal) => sum + meal.fatGrams) +
       selectedDayMeals.lunch.fold<double>(0, (sum, meal) => sum + meal.fatGrams) +
@@ -145,7 +148,8 @@ class _NutritionPlanScreenState extends ConsumerState<NutritionPlanScreen> {
 
     final authState = ref.watch(authNotifierProvider);
     final hasAssessment = authState.profile?.nutritionPreferences != null &&
-        (authState.profile!.nutritionPreferences!['questionnaire_completed'] == true);
+        (authState.profile!.nutritionPreferences!['questionnaire_completed'] == true) &&
+        (authState.profile!.nutritionPreferences!['food_region'] != null);
 
     return Scaffold(
       appBar: AppBar(
@@ -154,29 +158,16 @@ class _NutritionPlanScreenState extends ConsumerState<NutritionPlanScreen> {
           IconButton(
             icon: const Icon(Icons.camera_alt),
             onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Row(
-                    children: [
-                      Icon(Icons.info_outline, color: Colors.white),
-                      SizedBox(width: 12),
-                      Text('Food Scanner - Coming Soon!'),
-                    ],
-                  ),
-                  backgroundColor: Colors.blue,
-                  duration: Duration(seconds: 2),
-                ),
-              );
+              context.push('/food-scanner');
             },
-            tooltip: 'Scan Food (Coming Soon)',
+            tooltip: 'Scan Food',
           ),
-          // Regenerate button
-          if (hasAssessment)
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: nutritionState.isLoading ? null : () => _showRegenerateDialog(context, ref),
-              tooltip: 'Regenerate Plan',
-            ),
+          // Regenerate button - always visible so users can redo plan
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: nutritionState.isLoading ? null : () => _showRegenerateDialog(context, ref),
+            tooltip: 'Regenerate Plan',
+          ),
         ],
       ),
       body: LoadingOverlay(
@@ -255,9 +246,9 @@ class _NutritionPlanScreenState extends ConsumerState<NutritionPlanScreen> {
                   ),
                 ),
               ),
-              
+
               const SizedBox(height: 16),
-              
+
               // Meal Plan
               Text(
                 'Today\'s Meal Plan',
@@ -265,7 +256,7 @@ class _NutritionPlanScreenState extends ConsumerState<NutritionPlanScreen> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              
+
               if (currentPlan == null)
                 Center(
                   child: Padding(
@@ -310,7 +301,7 @@ class _NutritionPlanScreenState extends ConsumerState<NutritionPlanScreen> {
                     ),
                   ),
                 ),
-              
+
               if (currentPlan != null && selectedDayMeals?.breakfast.isNotEmpty == true)
                 ...selectedDayMeals!.breakfast.map((meal) => Padding(
                   padding: const EdgeInsets.only(bottom: 12),
@@ -375,9 +366,7 @@ class _NutritionPlanScreenState extends ConsumerState<NutritionPlanScreen> {
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          // TODO: Add meal logging
-        },
+        onPressed: () => _showQuickMealLogDialog(context),
         child: const Icon(Icons.add),
       ),
     );
@@ -385,18 +374,18 @@ class _NutritionPlanScreenState extends ConsumerState<NutritionPlanScreen> {
 
   int _calculateCalorieTarget(profile) {
     if (profile == null) return 2000;
-    
+
     final age = profile.age ?? 25;
     final weight = profile.weight ?? 70;
     final height = profile.height ?? 170;
     final gender = profile.gender ?? 'male';
     final activityLevel = profile.activityLevel ?? 'moderate';
     final goal = profile.primaryGoal ?? 'maintain';
-    
+
     // Mifflin-St Jeor BMR
     double bmr = (10 * weight) + (6.25 * height) - (5 * age);
     bmr += gender == 'male' ? 5 : -161;
-    
+
     // Activity multiplier
     final activityMultipliers = {
       'sedentary': 1.2,
@@ -406,7 +395,7 @@ class _NutritionPlanScreenState extends ConsumerState<NutritionPlanScreen> {
       'extremely_active': 1.9,
     };
     final tdee = bmr * (activityMultipliers[activityLevel] ?? 1.55);
-    
+
     // Goal adjustment
     double targetCalories = tdee;
     if (goal == 'weight_loss') {
@@ -414,7 +403,7 @@ class _NutritionPlanScreenState extends ConsumerState<NutritionPlanScreen> {
     } else if (goal == 'muscle_gain') {
       targetCalories += 300;
     }
-    
+
     return targetCalories.round();
   }
 
@@ -796,7 +785,7 @@ class _NutritionPlanScreenState extends ConsumerState<NutritionPlanScreen> {
             // Questionnaire completed - show success message
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('Nutrition profile saved! AI meal planning coming soon.'),
+                content: Text('Nutrition profile saved! Generating your plan...'),
                 behavior: SnackBarBehavior.floating,
               ),
             );
@@ -825,22 +814,121 @@ class _NutritionPlanScreenState extends ConsumerState<NutritionPlanScreen> {
     );
   }
 
+  void _showQuickMealLogDialog(BuildContext context) {
+    final caloriesController = TextEditingController();
+    final nameController = TextEditingController();
+    String selectedMealType = 'snack';
+    final mealTypes = ['breakfast', 'lunch', 'dinner', 'snack'];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Padding(
+          padding: EdgeInsets.only(
+            left: 16, right: 16, top: 16,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                    color: Theme.of(ctx).colorScheme.outline,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text('Quick Meal Log', style: Theme.of(ctx).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: 'What did you eat?', border: OutlineInputBorder()),
+                textCapitalization: TextCapitalization.sentences,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: caloriesController,
+                decoration: const InputDecoration(labelText: 'Estimated calories', border: OutlineInputBorder()),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                children: mealTypes.map((type) => ChoiceChip(
+                  label: Text(type[0].toUpperCase() + type.substring(1)),
+                  selected: selectedMealType == type,
+                  onSelected: (sel) => setModalState(() => selectedMealType = type),
+                )).toList(),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        context.push('/food-scanner');
+                      },
+                      icon: const Icon(Icons.camera_alt),
+                      label: const Text('Scan Instead'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () async {
+                        if (nameController.text.trim().isEmpty) return;
+                        Navigator.pop(ctx);
+                        final today = DateTime.now().toIso8601String().split('T')[0];
+                        final calories = int.tryParse(caloriesController.text) ?? 0;
+                        final success = await ref.read(nutritionNotifierProvider.notifier).logMeal(
+                          mealDate: today,
+                          mealType: selectedMealType,
+                          customMealName: nameController.text.trim(),
+                          calories: calories,
+                        );
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(success ? 'Logged: ${nameController.text.trim()}' : 'Failed to log meal'),
+                          backgroundColor: success ? Colors.green : Colors.red,
+                        ));
+                      },
+                      icon: const Icon(Icons.check),
+                      label: const Text('Log Meal'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showRegenerateDialog(BuildContext context, WidgetRef ref) {
     // Guard: Ensure assessment is completed
     final authState = ref.read(authNotifierProvider);
     final hasAssessment = authState.profile?.nutritionPreferences != null &&
-        (authState.profile!.nutritionPreferences!['questionnaire_completed'] == true);
-    
+        (authState.profile!.nutritionPreferences!['questionnaire_completed'] == true) &&
+        (authState.profile!.nutritionPreferences!['food_region'] != null);
+
     if (!hasAssessment) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please complete your nutrition assessment first!'),
+          content: Text('Please complete your food preferences first!'),
           backgroundColor: Colors.orange,
         ),
       );
+      _showNutritionQuestionnaire(context);
       return;
     }
-    
+
     final scaffoldMessenger = ScaffoldMessenger.of(context);
 
     showDialog(
@@ -959,22 +1047,18 @@ class _NutritionPlanScreenState extends ConsumerState<NutritionPlanScreen> {
     // Guard: Ensure assessment is completed before allowing generation
     final authState = ref.read(authNotifierProvider);
     final hasAssessment = authState.profile?.nutritionPreferences != null &&
-        (authState.profile!.nutritionPreferences!['questionnaire_completed'] == true);
-    
+        (authState.profile!.nutritionPreferences!['questionnaire_completed'] == true) &&
+        (authState.profile!.nutritionPreferences!['food_region'] != null);
+
     if (!hasAssessment) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please complete your nutrition assessment first!'),
-            backgroundColor: Colors.orange,
-          ),
-        );
+        _showNutritionQuestionnaire(context);
       }
       return;
     }
-    
+
     final success = await ref.read(generationNotifierProvider.notifier).startNutritionGeneration();
-    
+
     if (success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

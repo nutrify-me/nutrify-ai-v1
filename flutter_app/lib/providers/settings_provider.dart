@@ -13,6 +13,7 @@ class AppSettings {
   final bool notifyAchievements;
   final String dailyReminderTime; // HH:mm
   final String locale;
+  final int defaultRestSeconds;
 
   const AppSettings({
     this.theme = ThemePreference.system,
@@ -24,6 +25,7 @@ class AppSettings {
     this.notifyAchievements = true,
     this.dailyReminderTime = '08:00',
     this.locale = 'en',
+    this.defaultRestSeconds = 90,
   });
 
   AppSettings copyWith({
@@ -36,6 +38,7 @@ class AppSettings {
     bool? notifyAchievements,
     String? dailyReminderTime,
     String? locale,
+    int? defaultRestSeconds,
   }) {
     return AppSettings(
       theme: theme ?? this.theme,
@@ -47,6 +50,7 @@ class AppSettings {
       notifyAchievements: notifyAchievements ?? this.notifyAchievements,
       dailyReminderTime: dailyReminderTime ?? this.dailyReminderTime,
       locale: locale ?? this.locale,
+      defaultRestSeconds: defaultRestSeconds ?? this.defaultRestSeconds,
     );
   }
 
@@ -83,6 +87,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   static const _keyNotifyWeekly = 'settings_notify_weekly';
   static const _keyNotifyAchievements = 'settings_notify_achievements';
   static const _keyReminderTime = 'settings_reminder_time';
+  static const _keyRestTimer = 'settings_rest_timer';
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -95,6 +100,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       notifyWeeklyReport: prefs.getBool(_keyNotifyWeekly) ?? true,
       notifyAchievements: prefs.getBool(_keyNotifyAchievements) ?? true,
       dailyReminderTime: prefs.getString(_keyReminderTime) ?? '08:00',
+      defaultRestSeconds: prefs.getInt(_keyRestTimer) ?? 90,
     );
   }
 
@@ -108,6 +114,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     await prefs.setBool(_keyNotifyWeekly, state.notifyWeeklyReport);
     await prefs.setBool(_keyNotifyAchievements, state.notifyAchievements);
     await prefs.setString(_keyReminderTime, state.dailyReminderTime);
+    await prefs.setInt(_keyRestTimer, state.defaultRestSeconds);
   }
 
   void setTheme(ThemePreference theme) {
@@ -147,6 +154,11 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
 
   void setDailyReminderTime(String time) {
     state = state.copyWith(dailyReminderTime: time);
+    _save();
+  }
+
+  void setDefaultRestSeconds(int seconds) {
+    state = state.copyWith(defaultRestSeconds: seconds);
     _save();
   }
 }

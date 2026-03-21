@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../providers/fitness_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/generation_provider.dart' show generationNotifierProvider, GenerationState, GenerationTaskState;
@@ -9,6 +10,7 @@ import '../../widgets/common/loading_overlay.dart';
 import '../../services/workout_cache_service.dart';
 import 'active_workout_screen.dart';
 import 'fitness_questionnaire_screen.dart';
+import 'workout_history_screen.dart';
 
 class FitnessPlanScreen extends ConsumerStatefulWidget {
   const FitnessPlanScreen({super.key});
@@ -192,7 +194,7 @@ class _FitnessPlanScreenState extends ConsumerState<FitnessPlanScreen> with Widg
     // Reload workouts when app comes to foreground
     if (state == AppLifecycleState.resumed) {
       _loadCompletedWorkoutsForDay(_selectedDay);
-      ref.read(fitnessNotifierProvider.notifier).loadWeeklyStats();
+      ref.read(fitnessNotifierProvider.notifier).loadWeeklyStats(forceRefresh: true);
     }
   }
 
@@ -246,9 +248,19 @@ class _FitnessPlanScreenState extends ConsumerState<FitnessPlanScreen> with Widg
           //     tooltip: 'Regenerate Plan',
           //   ),
           IconButton(
+            icon: const Icon(Icons.show_chart),
+            tooltip: 'Exercise Progress',
+            onPressed: () => context.push('/exercise-progress'),
+          ),
+          IconButton(
             icon: const Icon(Icons.history),
             onPressed: () {
-              // TODO: Show workout history
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const WorkoutHistoryScreen(),
+                ),
+              );
             },
           ),
           if (hasAssessment)
@@ -355,9 +367,9 @@ class _FitnessPlanScreenState extends ConsumerState<FitnessPlanScreen> with Widg
                   ),
                 ),
               ),
-              
+
               const SizedBox(height: 16),
-              
+
               // Today's Workout
               Text(
                 'Today\'s Workout',
@@ -365,7 +377,7 @@ class _FitnessPlanScreenState extends ConsumerState<FitnessPlanScreen> with Widg
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              
+
               const SizedBox(height: 16),
 
               if (currentPlan == null && (_completedWorkoutsToday == null || _completedWorkoutsToday!.isEmpty))
@@ -442,7 +454,7 @@ class _FitnessPlanScreenState extends ConsumerState<FitnessPlanScreen> with Widg
                     ),
                   ),
                 ),
-              
+
               if (selectedWorkout != null)
                 Card(
                   child: Padding(
@@ -507,10 +519,10 @@ class _FitnessPlanScreenState extends ConsumerState<FitnessPlanScreen> with Widg
                     ),
                   ),
                 ),
-              
+
               if (selectedWorkout != null)
                 const SizedBox(height: 16),
-              
+
               if (selectedWorkout != null)
                 ...selectedWorkout.exercises.map((exercise) => Padding(
                   padding: const EdgeInsets.only(bottom: 12),
@@ -525,102 +537,205 @@ class _FitnessPlanScreenState extends ConsumerState<FitnessPlanScreen> with Widg
               // Show completed custom workouts for this day
               if (_completedWorkoutsToday != null && _completedWorkoutsToday!.isNotEmpty) ...[
                 if (selectedWorkout != null) const SizedBox(height: 16),
-                if (selectedWorkout != null) const Divider(),
+                if (selectedWorkout != null) Divider(color: Theme.of(context).colorScheme.outlineVariant),
                 const SizedBox(height: 16),
-                Text(
-                  selectedWorkout != null ? 'What You Actually Did' : 'Today\'s Completed Workout',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withOpacity(Theme.of(context).brightness == Brightness.dark ? 0.2 : 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(Icons.check_circle_outline, color: Colors.green, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        selectedWorkout != null ? 'What You Actually Did' : 'Today\'s Completed Workout',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () {
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => const WorkoutHistoryScreen()));
+                      },
+                      icon: const Icon(Icons.history, size: 16),
+                      label: const Text('History'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Theme.of(context).colorScheme.primary,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
-                ..._completedWorkoutsToday!.map((session) => Card(
-                  color: Colors.green.withOpacity(0.1),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
+                ..._completedWorkoutsToday!.map((session) {
+                  final theme = Theme.of(context);
+                  final isDark = theme.brightness == Brightness.dark;
+                  final durationMin = session.durationSeconds ~/ 60;
+                  final exerciseSummary = _exerciseSummaries[session.id] ?? {};
+                  final exerciseCount = exerciseSummary.length;
+                  final totalSets = exerciseSummary.values.fold<int>(0, (sum, v) => sum + v);
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: Colors.green.withOpacity(isDark ? 0.3 : 0.2),
+                        width: 1.5,
+                      ),
+                    ),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Icon(Icons.check_circle, color: Colors.green, size: 20),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                session.workoutName,
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
+                        // Header
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 14, 12, 0),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [Colors.green.shade400, Colors.green.shade600],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(Icons.fitness_center, color: Colors.white, size: 20),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      session.workoutName,
+                                      style: theme.textTheme.titleSmall?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                        color: theme.colorScheme.onSurface,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '$exerciseCount exercises • $totalSets total sets',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: theme.colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ),
-                            if (session.syncStatus != 'synced')
-                              Chip(
-                                label: Text(
-                                  session.syncStatus == 'pending' ? 'Pending Sync' : 'Syncing...',
-                                  style: const TextStyle(fontSize: 11),
-                                ),
-                                backgroundColor: Colors.orange.withOpacity(0.2),
+                              // Sync indicator
+                              if (session.syncStatus != 'synced')
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.withOpacity(isDark ? 0.2 : 0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.cloud_off, size: 12, color: Colors.orange.shade700),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Pending',
+                                        style: TextStyle(fontSize: 10, color: Colors.orange.shade700, fontWeight: FontWeight.w600),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              else
+                                Icon(Icons.cloud_done, size: 18, color: Colors.green.withOpacity(0.6)),
+                              const SizedBox(width: 4),
+                              IconButton(
+                                icon: Icon(Icons.edit_outlined, size: 18, color: theme.colorScheme.onSurfaceVariant),
+                                onPressed: () => _editWorkout(session),
+                                tooltip: 'Edit workout',
                                 padding: EdgeInsets.zero,
-                                visualDensity: VisualDensity.compact,
+                                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                               ),
-                            IconButton(
-                              icon: const Icon(Icons.edit, size: 20),
-                              onPressed: () => _editWorkout(session),
-                              tooltip: 'Edit workout',
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Icon(Icons.access_time, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${session.durationSeconds ~/ 60} min',
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                            const SizedBox(width: 16),
-                            Icon(Icons.fitness_center, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${session.totalVolume} kg',
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                          ],
+
+                        // Stats row
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                          child: Row(
+                            children: [
+                              _buildCompletedStat(theme, isDark, Icons.schedule, '${durationMin}m', 'Duration'),
+                              const SizedBox(width: 12),
+                              _buildCompletedStat(theme, isDark, Icons.monitor_weight_outlined, '${session.totalVolume}', 'Volume (kg)'),
+                              const SizedBox(width: 12),
+                              _buildCompletedStat(theme, isDark, Icons.format_list_numbered, '$totalSets', 'Sets'),
+                            ],
+                          ),
                         ),
-                        // Show exercises done
-                        if (_exerciseSummaries[session.id]?.isNotEmpty ?? false) ...[
-                          const SizedBox(height: 12),
-                          Divider(color: Colors.green.withOpacity(0.3)),
-                          const SizedBox(height: 8),
-                          ..._exerciseSummaries[session.id]!.entries.map((exercise) => Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: Row(
-                              children: [
-                                Icon(Icons.check, size: 14, color: Colors.green.shade700),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    exercise.key,
-                                    style: Theme.of(context).textTheme.bodySmall,
-                                  ),
+
+                        // Exercise list
+                        if (exerciseSummary.isNotEmpty) ...[
+                          Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                            child: Column(
+                              children: exerciseSummary.entries.map((exercise) => Padding(
+                                padding: const EdgeInsets.only(bottom: 6),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 6,
+                                      height: 6,
+                                      decoration: BoxDecoration(
+                                        color: Colors.green,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        exercise.key,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: theme.colorScheme.onSurface,
+                                        ),
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: theme.colorScheme.primary.withOpacity(isDark ? 0.15 : 0.08),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        '${exercise.value} sets',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: theme.colorScheme.primary,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                Text(
-                                  '${exercise.value} sets',
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
+                              )).toList(),
                             ),
-                          )).toList(),
+                          ),
                         ],
                       ],
                     ),
-                  ),
-                )).toList(),
+                  );
+                }).toList(),
               ],
 
               if (currentPlan != null && selectedWorkout == null && (_completedWorkoutsToday == null || _completedWorkoutsToday!.isEmpty))
@@ -662,7 +777,7 @@ class _FitnessPlanScreenState extends ConsumerState<FitnessPlanScreen> with Widg
                     ),
                   ),
                 ),
-              
+
               // Quick Start button when there's a workout scheduled
               if (currentPlan != null && selectedWorkout != null)
                 Padding(
@@ -725,6 +840,40 @@ class _FitnessPlanScreenState extends ConsumerState<FitnessPlanScreen> with Widg
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildCompletedStat(ThemeData theme, bool isDark, IconData icon, String value, String label) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest.withOpacity(isDark ? 0.4 : 0.6),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1251,6 +1400,7 @@ class _FitnessPlanScreenState extends ConsumerState<FitnessPlanScreen> with Widg
     // Refresh completed workouts after editing
     if (mounted) {
       _loadCompletedWorkoutsForDay(_selectedDay);
+      ref.read(fitnessNotifierProvider.notifier).loadWeeklyStats(forceRefresh: true);
     }
   }
 
@@ -1263,7 +1413,7 @@ class _FitnessPlanScreenState extends ConsumerState<FitnessPlanScreen> with Widg
             // Questionnaire completed - show success message
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('Fitness profile saved! AI plan generation coming soon.'),
+                content: Text('Fitness profile saved! Generating your plan...'),
                 behavior: SnackBarBehavior.floating,
               ),
             );
@@ -1330,7 +1480,7 @@ class _FitnessPlanScreenState extends ConsumerState<FitnessPlanScreen> with Widg
     final authState = ref.read(authNotifierProvider);
     final hasAssessment = authState.profile?.fitnessPreferences != null &&
         (authState.profile!.fitnessPreferences!['questionnaire_completed'] == true);
-    
+
     if (!hasAssessment) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1340,7 +1490,7 @@ class _FitnessPlanScreenState extends ConsumerState<FitnessPlanScreen> with Widg
       );
       return;
     }
-    
+
     final scaffoldMessenger = ScaffoldMessenger.of(context);
 
     showDialog(
@@ -1468,7 +1618,7 @@ class _FitnessPlanScreenState extends ConsumerState<FitnessPlanScreen> with Widg
     final authState = ref.read(authNotifierProvider);
     final hasAssessment = authState.profile?.fitnessPreferences != null &&
         (authState.profile!.fitnessPreferences!['questionnaire_completed'] == true);
-    
+
     if (!hasAssessment) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1480,9 +1630,9 @@ class _FitnessPlanScreenState extends ConsumerState<FitnessPlanScreen> with Widg
       }
       return;
     }
-    
+
     final success = await ref.read(generationNotifierProvider.notifier).startFitnessGeneration();
-    
+
     if (success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

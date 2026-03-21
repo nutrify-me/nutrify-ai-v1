@@ -235,7 +235,7 @@ class _ActiveWorkoutScreenState extends ConsumerState<ActiveWorkoutScreen> {
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -246,11 +246,11 @@ class _ActiveWorkoutScreenState extends ConsumerState<ActiveWorkoutScreen> {
             size: 20,
           ),
           const SizedBox(width: 12),
-          const Text(
+          Text(
             'Rest Timer',
             style: TextStyle(
               fontWeight: FontWeight.w600,
-              color: Colors.black87,
+              color: theme.colorScheme.onSurface,
             ),
           ),
           const SizedBox(width: 12),
@@ -425,7 +425,7 @@ class _ActiveWorkoutScreenState extends ConsumerState<ActiveWorkoutScreen> {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -465,17 +465,18 @@ class _ActiveWorkoutScreenState extends ConsumerState<ActiveWorkoutScreen> {
                       children: [
                         Text(
                           exercise.name,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
+                            color: theme.colorScheme.onSurface,
                           ),
                         ),
                         const SizedBox(height: 2),
                         Text(
                           '${exercise.completedSets.where((s) => !s.isWarmup).length}/${exercise.targetSets} sets${exercise.targetReps != null ? ' • ${exercise.targetReps} reps' : ''}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
-                            color: Colors.grey,
+                            color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ],
@@ -758,7 +759,7 @@ class _ActiveWorkoutScreenState extends ConsumerState<ActiveWorkoutScreen> {
                 child: Center(
                   child: Text(
                     set.weightKg.toStringAsFixed(1),
-                    style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 16),
+                    style: TextStyle(fontWeight: FontWeight.w500, fontSize: 16, color: theme.colorScheme.onSurface),
                   ),
                 ),
               ),
@@ -780,7 +781,7 @@ class _ActiveWorkoutScreenState extends ConsumerState<ActiveWorkoutScreen> {
                       exercise.exerciseType == ExerciseType.duration || exercise.exerciseType == ExerciseType.cardio
                           ? _formatDuration(set.durationSeconds ?? 0)
                           : '${set.reps}',
-                      style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 16),
+                      style: TextStyle(fontWeight: FontWeight.w500, fontSize: 16, color: theme.colorScheme.onSurface),
                     ),
                   ],
                 ),
@@ -913,7 +914,7 @@ class _ActiveWorkoutScreenState extends ConsumerState<ActiveWorkoutScreen> {
               ? const TextInputType.numberWithOptions(decimal: true)
               : TextInputType.number,
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurface),
           decoration: InputDecoration(
             isDense: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
@@ -922,7 +923,7 @@ class _ActiveWorkoutScreenState extends ConsumerState<ActiveWorkoutScreen> {
               borderSide: BorderSide.none,
             ),
             filled: true,
-            fillColor: Colors.grey.withOpacity(0.1),
+            fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
             suffixText: suffix,
           ),
           inputFormatters: [

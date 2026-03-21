@@ -5,6 +5,7 @@ import 'dart:convert';
 import '../models/fitness.dart';
 import '../services/api_service.dart';
 import '../services/local_database.dart';
+import '../services/workout_cache_service.dart';
 import 'auth_provider.dart';
 
 final _logger = Logger();
@@ -240,7 +241,7 @@ class FitnessNotifier extends StateNotifier<FitnessState> {
 
   Future<void> loadWeeklyStats({bool forceRefresh = false}) async {
     try {
-      // Try to load from cache first (only if not force refresh)
+      // Try to load from SharedPreferences cache first (only if not force refresh)
       if (!forceRefresh) {
         final prefs = await SharedPreferences.getInstance();
         final cachedData = prefs.getString('weekly_stats_cache');
@@ -248,10 +249,9 @@ class FitnessNotifier extends StateNotifier<FitnessState> {
 
         if (cachedData != null && cacheTimestamp != null) {
           final cacheAge = DateTime.now().millisecondsSinceEpoch - cacheTimestamp;
-          const fiveMinutes = 5 * 60 * 1000; // 5 minutes in milliseconds
+          const twoMinutes = 2 * 60 * 1000;
 
-          // Use cache if less than 5 minutes old
-          if (cacheAge < fiveMinutes) {
+          if (cacheAge < twoMinutes) {
             final Map<String, dynamic> cached = json.decode(cachedData);
             state = state.copyWith(
               weeklyStats: WeeklyWorkoutStats(
@@ -259,28 +259,24 @@ class FitnessNotifier extends StateNotifier<FitnessState> {
                 totalDurationHours: (cached['totalDurationHours'] as num?)?.toDouble() ?? 0.0,
                 totalCaloriesBurned: cached['totalCaloriesBurned'] ?? 0,
               ),
-              workoutLogs: (cached['workoutLogs'] as List?)?.cast<Map<String, dynamic>>() ?? [],
             );
-            _logger.d('Loaded weekly stats from cache (age: ${(cacheAge / 1000).toStringAsFixed(0)}s)');
+            _logger.d('Loaded weekly stats from prefs cache (age: ${(cacheAge / 1000).toStringAsFixed(0)}s)');
             return;
           }
         }
       }
 
-      // Fetch fresh data from API
-      final logs = await _apiService.getWorkoutLogs(days: 7);
+      // Compute stats from local workout cache (set-level tracking)
+      final sessions = await WorkoutCacheService.instance.getRecentWorkouts(days: 7);
 
-      // Calculate stats from logs
-      int completedWorkouts = 0;
+      int completedWorkouts = sessions.length;
       double totalDurationMinutes = 0;
       int totalCalories = 0;
 
-      for (final log in logs) {
-        if (log['completed'] == true) {
-          completedWorkouts++;
-        }
-        totalDurationMinutes += (log['duration_minutes'] as num?)?.toDouble() ?? 0;
-        totalCalories += (log['calories_burned'] as num?)?.toInt() ?? 0;
+      for (final session in sessions) {
+        totalDurationMinutes += session.durationSeconds / 60.0;
+        // Estimate calories: ~5 cal per minute of workout (rough avg)
+        totalCalories += (session.durationSeconds / 60.0 * 5).round();
       }
 
       final weeklyStats = WeeklyWorkoutStats(
@@ -291,24 +287,21 @@ class FitnessNotifier extends StateNotifier<FitnessState> {
 
       state = state.copyWith(
         weeklyStats: weeklyStats,
-        workoutLogs: logs,
       );
 
-      // Cache the data
+      // Cache to SharedPreferences
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('weekly_stats_cache', json.encode({
         'completedWorkouts': completedWorkouts,
         'totalDurationHours': totalDurationMinutes / 60,
         'totalCaloriesBurned': totalCalories,
-        'workoutLogs': logs,
       }));
       await prefs.setInt('weekly_stats_cache_time', DateTime.now().millisecondsSinceEpoch);
-      _logger.d('Cached weekly stats');
+      _logger.d('Weekly stats: $completedWorkouts workouts, ${totalDurationMinutes.toStringAsFixed(0)}min, $totalCalories cal');
     } catch (e) {
-      // Don't show error for stats - just use defaults
+      _logger.e('Failed to load weekly stats: $e');
       state = state.copyWith(
         weeklyStats: const WeeklyWorkoutStats(),
-        workoutLogs: [],
       );
     }
   }
